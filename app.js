@@ -3,6 +3,11 @@
   'use strict';
   var KEY = 'dk.v1';
   var S = load();
+  if (!S.v || S.v < 2) { // v1 auto-marked chapters done just by opening them; clear those unreliable marks once
+    if (Object.keys(S.done || {}).length) { S.done = {}; setTimeout(function () { toast('আগের ভুল ✓ চিহ্নগুলো মুছে দেওয়া হয়েছে। এখন শুধু "অধ্যায় শেষ" বোতামে ✓ লাগবে।', 5000); }, 800); }
+    S.v = 2; save();
+  }
+  S.lastBy = S.lastBy || {};
   function load() { try { return Object.assign({ last: null, done: {}, stars: {}, rate: 1, scroll: {} }, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { return { last: null, done: {}, stars: {}, rate: 1, scroll: {} }; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
   var $ = function (s, r) { return (r || document).querySelector(s); };
@@ -65,6 +70,10 @@
   }
   document.addEventListener('click', function (e) {
     var t = e.target;
+    var tg = t.closest && t.closest('[data-toggle]');
+    if (tg && tg.closest('li.done')) { e.preventDefault(); e.stopPropagation(); delete S.done[tg.getAttribute('data-toggle')]; save(); toast('চিহ্ন সরানো হলো'); route(); return; }
+    var rs = t.closest && t.closest('[data-reset]');
+    if (rs) { e.preventDefault(); var pre = rs.getAttribute('data-reset') + '/'; Object.keys(S.done).forEach(function (k) { if (k.indexOf(pre) === 0) delete S.done[k]; }); save(); toast('সব ✓ মুছে ফেলা হলো'); route(); return; }
     var star = t.closest && t.closest('.star');
     if (star) { e.preventDefault(); e.stopPropagation(); toggleStar(star); return; }
     var rv = t.closest && t.closest('.reveal');
@@ -95,7 +104,7 @@
   function updateStarCount() { $('#starCount').textContent = bn(Object.keys(S.stars).length); }
   function addStars(root) {
     $$('table.voc td.say, table.cards td.say', root).forEach(function (td) {
-      var tr = td.closest('tr'); if (!tr || !tr.querySelector('td.bn') || tr.querySelector('.star')) return;
+      var tr = td.closest('tr'); if (!tr || !tr.querySelector('td.bn') || !tr.querySelector('td.pr') || tr.querySelector('.star')) return;
       var on = !!S.stars[td.getAttribute('data-a')];
       var b = document.createElement('button'); b.className = 'star' + (on ? ' on' : ''); b.type = 'button'; b.textContent = on ? '★' : '☆'; b.setAttribute('aria-label', 'star');
       tr.querySelector('td.bn').appendChild(b);
@@ -117,7 +126,8 @@
     var k = chKey(view.level, view.ch);
     S.scroll[k] = Math.round(scrollY);
     S.last = { level: view.level, ch: view.ch, scroll: Math.round(scrollY), section: currentSection(), at: Date.now() };
-    if (readPct() > 0.97 && !S.done[k] && scrollY > 200) { S.done[k] = true; toast('অধ্যায় শেষ ✓ দারুণ!'); var b = $('.donebtn'); if (b) setDoneBtn(b, true); }
+    S.lastBy[view.level] = S.last;
+    // no auto-complete: chapters are marked done only with the explicit button (tap again to undo)
     save();
   }
   function currentSection() {
@@ -127,7 +137,7 @@
   }
   document.addEventListener('visibilitychange', function () { if (document.hidden) persistPos(); });
   window.addEventListener('pagehide', persistPos);
-  function setDoneBtn(b, on) { b.classList.toggle('on', on); b.textContent = on ? '✓ অধ্যায় শেষ হয়েছে' : 'অধ্যায় শেষ হিসেবে চিহ্নিত করুন'; }
+  function setDoneBtn(b, on) { b.classList.toggle('on', on); b.textContent = on ? '✓ অধ্যায় শেষ (চাপলে চিহ্ন উঠবে)' : 'অধ্যায় শেষ ✓ চিহ্ন দিন'; }
 
   /* ---------- drawer ---------- */
   function openDrawer() {
@@ -154,24 +164,25 @@
 
   /* ---------- views ---------- */
   function levelProgress(L, id) { var n = L.chapters.filter(function (c) { return S.done[chKey(id, c.id)]; }).length; return { n: n, total: L.chapters.length }; }
-  function continueHTML() {
-    if (!S.last) return '';
-    var L = cache[S.last.level], c = L && L.chapters.filter(function (x) { return x.id === S.last.ch; })[0];
-    var label = c ? (S.last.level.toUpperCase() + ' · ' + c.num + ' — ' + c.title) : '';
-    return '<a class="continue" href="#/' + S.last.level + '/' + S.last.ch + '" data-resume="1">▶ যেখানে ছিলেন সেখান থেকে চালিয়ে যান<small>' + esc(label) + '</small></a>';
+  function continueHTML(lv) {
+    var last = lv ? S.lastBy[lv] : S.last;
+    if (!last) return '';
+    var L = cache[last.level], c = L && L.chapters.filter(function (x) { return x.id === last.ch; })[0];
+    var label = c ? (last.level.toUpperCase() + ' · ' + c.num + ' — ' + c.title) : '';
+    return '<a class="continue" href="#/' + last.level + '/' + last.ch + '" data-resume="1">▶ যেখানে ছিলেন সেখান থেকে চালিয়ে যান<small>' + esc(label) + '</small></a>';
   }
   function renderHome() {
     view = null; $('#readbar').style.width = '0';
     var lv = (S.last && S.last.level) || 'a1';
     getLevel(lv).then(function (L) {
       var p = levelProgress(L, lv);
-      var h = '<section class="cover"><div class="kicker">GOETHE-ZERTIFIKAT A1 · START DEUTSCH 1</div><h1>Deutsch A1<br>kompakt</h1>' +
-        '<div class="sub">বাংলাভাষীদের জন্য জার্মান A1 পরীক্ষার<br>সংক্ষিপ্ত প্রস্তুতি — এখন শুনেও শিখুন</div><div class="line"></div>' +
+      var h = '<section class="cover"><div class="kicker">GOETHE-ZERTIFIKAT · ' + window.LEVELS.filter(function (l) { return l.ready; }).map(function (l) { return l.title; }).join(' · ') + '</div><h1>Deutsch<br>kompakt</h1>' +
+        '<div class="sub">বাংলাভাষীদের জন্য জার্মান পরীক্ষার<br>সংক্ষিপ্ত প্রস্তুতি — এখন শুনেও শিখুন</div><div class="line"></div>' +
         '<ul><li>যেকোনো জার্মান শব্দে চাপ দিন — উচ্চারণ শুনুন 🔊</li><li>প্রতিটি শব্দের বাংলা উচ্চারণ ও অর্থ</li><li>যেখানে থামবেন, পরের বার ঠিক সেখান থেকেই শুরু</li></ul>' +
         (S.last ? continueHTML() : '<a class="start" href="#/a1/ch1">শুরু করুন →</a>') +
         '<div class="hint">টিপস: ব্রাউজারের মেনু থেকে "Add to Home screen" দিন — অ্যাপের মতো খুলবে।</div></section>';
       h += '<div class="page"><div class="sec-title">স্তর · Niveau</div><div class="levels">' + window.LEVELS.map(function (l) {
-        return l.ready ? '<a class="cur" href="#/' + l.id + '"><b>' + l.title + '</b><small>চালু আছে</small></a>' : '<div class="soon"><b>' + l.title + '</b><small>শীঘ্রই আসছে</small></div>';
+        return l.ready ? '<a class="' + (l.id === lv ? 'cur' : 'rdy') + '" href="#/' + l.id + '"><b>' + l.title + '</b><small>' + (l.id === lv ? 'এখন পড়ছেন' : 'চালু আছে') + '</small></a>' : '<div class="soon"><b>' + l.title + '</b><small>শীঘ্রই আসছে</small></div>';
       }).join('') + '</div>';
       h += chapterList(L, lv, p) + '</div>';
       app.innerHTML = h; scrollTo(0, 0);
@@ -181,9 +192,9 @@
     var h = '<div class="sec-title">' + lv.toUpperCase() + ' অধ্যায়সমূহ</div><div class="small">অগ্রগতি: ' + bn(p.n) + '/' + bn(p.total) + ' অধ্যায় শেষ</div><div class="progress"><i style="width:' + (100 * p.n / p.total) + '%"></i></div><ul class="chlist">';
     L.chapters.forEach(function (c, i) {
       var k = chKey(lv, c.id), d = S.done[k], started = S.scroll[k] > 0;
-      h += '<li class="' + (d ? 'done' : '') + '"><a href="#/' + lv + '/' + c.id + '"><span class="no">' + (d ? '✓' : bn(i + 1)) + '</span><span class="tt"><b>' + esc(c.title) + '</b><i>' + esc(c.de) + '</i></span><span class="st">' + (d ? 'শেষ' : started ? 'চলছে' : '') + '</span></a></li>';
+      h += '<li class="' + (d ? 'done' : '') + '"><a href="#/' + lv + '/' + c.id + '"><span class="no" data-toggle="' + k + '" title="চিহ্ন বদলান">' + (d ? '✓' : bn(i + 1)) + '</span><span class="tt"><b>' + esc(c.title) + '</b><i>' + esc(c.de) + '</i></span><span class="st">' + (d ? 'শেষ' : started ? 'চলছে' : '') + '</span></a></li>';
     });
-    return h + '</ul>';
+    return h + '</ul><p class="small">✓ ভুল করে লেগে গেলে সবুজ গোল ✓-তে চাপ দিন — চিহ্ন উঠে যাবে। <a href="#" data-reset="' + lv + '">সব ✓ মুছুন</a></p>';
   }
   function renderLevel(lv) {
     view = null;
@@ -191,7 +202,7 @@
     if (meta && !meta.ready) { app.innerHTML = '<div class="page"><h1 class="chapter"><span class="num">' + meta.title + '</span>শীঘ্রই আসছে<span class="de">Kommt bald</span></h1><p>এই স্তরের বিষয়বস্তু তৈরি হচ্ছে। ততক্ষণ A1 চালিয়ে যান।</p><a class="continue" href="#/a1">A1-এ যান</a></div>'; return; }
     getLevel(lv).then(function (L) {
       if (!L) return renderHome();
-      app.innerHTML = '<div class="page">' + continueHTML() + chapterList(L, lv, levelProgress(L, lv)) + '</div>'; scrollTo(0, 0);
+      app.innerHTML = '<div class="page">' + continueHTML(lv) + chapterList(L, lv, levelProgress(L, lv)) + '</div>'; scrollTo(0, 0);
     });
   }
   function renderChapter(lv, cid, sec, resume) {
@@ -207,9 +218,9 @@
         (prev ? '<a class="prev" href="#/' + lv + '/' + prev.id + '">← ' + esc(prev.title) + '</a>' : '<a class="prev" href="#/">← হোম</a>') +
         (next ? '<a href="#/' + lv + '/' + next.id + '">' + esc(next.title) + ' →</a>' : '<a href="#/">হোম →</a>') + '</div></div></article>';
       $$('#chap table').forEach(function (t) { if (t.classList.contains('grid')) { var w = document.createElement('div'); w.className = 'tw'; t.parentNode.insertBefore(w, t); w.appendChild(t); } });
-      addStars(app);
+      addStars(app); app.setAttribute('data-view', lv + '/' + cid);
       var b = $('.donebtn'); var k = chKey(lv, cid); setDoneBtn(b, !!S.done[k]);
-      b.onclick = function () { S.done[k] = !S.done[k]; save(); setDoneBtn(b, S.done[k]); if (S.done[k]) toast('দারুণ! ✓'); };
+      b.onclick = function () { if (S.done[k]) delete S.done[k]; else S.done[k] = true; save(); setDoneBtn(b, !!S.done[k]); toast(S.done[k] ? 'দারুণ! ✓ (আবার চাপলে চিহ্ন উঠে যাবে)' : 'চিহ্ন সরানো হলো'); };
       requestAnimationFrame(function () {
         if (sec && document.getElementById(sec)) document.getElementById(sec).scrollIntoView();
         else if (resume && S.scroll[k]) { scrollTo(0, S.scroll[k]); toast('আগের জায়গা থেকে শুরু হলো ↩'); }
