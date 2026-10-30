@@ -163,6 +163,15 @@ details.allans summary { font-weight: 700; color: var(--navy); cursor: pointer; 
   table.voc td.pr { grid-column: 1; grid-row: 2; font-size: 14px; }
   table.voc td.bn { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 15px; }
   table.grid td { font-size: 13.5px; padding: 5px 2px; }
+  /* vocab rows with two German cells (e.g. 0 | null | pron): number left, word + pronunciation right */
+  table.voc td.de:first-child:not(:only-child) + td.de { grid-column: 2; grid-row: 1; }
+  table.voc td.de + td.de ~ td.pr { grid-column: 2; grid-row: 2; }
+  table.voc tr > td.de:first-child:has(+ td.de) { grid-row: 1 / span 2; align-self: center; }
+  table.voc td.de + td.de ~ td.bn { grid-column: 1 / span 2; grid-row: 3; }
+  /* letter grid: wrap 5 letter/sound pairs into rows of 3 so nothing gets squeezed */
+  table.grid, table.grid tbody { display: block; }
+  table.grid tr { display: grid; grid-template-columns: repeat(3, auto 1fr); align-items: center; }
+  table.grid td { border: 0; white-space: nowrap; }
   h2 { font-size: 19px; }
 }
 
