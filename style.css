@@ -92,6 +92,19 @@ td.de .m, td.de .f, td.de .n { font-weight: 600; }
 .box .t { font-weight: 700; color: var(--navy); display: block; margin-bottom: 4px; }
 .box.tip .t { color: #8a5a00; } .box.warn .t { color: #a1142a; }
 .box p:last-child { margin-bottom: 0; }
+/* "সহজ কথায়" simple explanation box at the top of grammar sections */
+.box.easy { border-color: #9fd0b0; background: #f3fbf6; padding: 12px 15px; }
+.box.easy .t { color: #1e6b3a; font-size: 15px; }
+.easy .what { font-size: 16.5px; font-weight: 600; color: #1f3d2b; margin: 2px 0 8px; line-height: 1.55; }
+.easy ol.steps { margin: 0 0 10px; padding-left: 1.4em; }
+.easy ol.steps li { margin: 0 0 5px; line-height: 1.6; }
+.easy .g { color: var(--navy); font-weight: 600; overflow-wrap: anywhere; }
+.easy ul.ex { list-style: none; margin: 0 0 8px; padding: 0; }
+.easy ul.ex li { background: #fff; border: 1px solid #d6eadc; border-radius: 8px; padding: 7px 10px; margin: 0 0 6px; }
+.easy ul.ex .de { display: block; overflow-wrap: anywhere; }
+.easy ul.ex .bn { display: block; color: #33495e; font-size: 14.5px; margin-top: 2px; }
+.easy .mem { background: #fffaf0; border-left: 3px solid #e6c46a; padding: 6px 10px; border-radius: 4px; margin: 0; }
+
 ul, ol { margin: 0 0 12px; padding-left: 24px; } li { margin-bottom: 5px; }
 .small { font-size: 14px; color: var(--muted); }
 b.de, span.de, p.de { color: var(--navy); font-weight: 600; }
