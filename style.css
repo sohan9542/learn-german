@@ -104,6 +104,20 @@ td.de .m, td.de .f, td.de .n { font-weight: 600; }
 .easy ul.ex .de { display: block; overflow-wrap: anywhere; }
 .easy ul.ex .bn { display: block; color: #33495e; font-size: 14.5px; margin-top: 2px; }
 .easy .mem { background: #fffaf0; border-left: 3px solid #e6c46a; padding: 6px 10px; border-radius: 4px; margin: 0; }
+/* A1 sentence-first grammar: short rule box, sentence cards with why-notes, full tables folded */
+.easy.short .what { margin-bottom: 4px; }
+.easy .rule { margin: 0; line-height: 1.6; }
+ul.sent { list-style: none; margin: 8px 0 14px; padding: 0; }
+ul.sent li { border: 1px solid var(--line); border-left: 4px solid var(--navy2); border-radius: 8px; background: #fff; padding: 9px 12px; margin: 0 0 9px; }
+ul.sent .de { display: block; font-size: 17px; overflow-wrap: anywhere; }
+ul.sent mark.k { background: #ffe9a8; color: #7a2400; border-radius: 4px; padding: 0 3px; font-weight: 700; }
+ul.sent .bn { display: block; margin-top: 3px; color: #1f2a33; }
+ul.sent .why { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #dfe5ea; font-size: 14.5px; color: #4a5a68; line-height: 1.55; }
+ul.sent .why > b:first-child { color: #1e6b3a; }
+ul.sent .g { color: var(--navy); font-weight: 600; overflow-wrap: anywhere; }
+details.fulltab { margin: 6px 0 18px; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; background: #fafcfd; }
+details.fulltab > summary { cursor: pointer; padding: 10px 0; font-weight: 600; color: var(--navy2); }
+details.fulltab[open] { padding-bottom: 8px; }
 
 ul, ol { margin: 0 0 12px; padding-left: 24px; } li { margin-bottom: 5px; }
 .small { font-size: 14px; color: var(--muted); }
