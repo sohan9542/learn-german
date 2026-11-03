@@ -160,6 +160,31 @@
   function setRateBtn() { var b = $('#rateBtn'); b.textContent = rateLbl[S.rate] || '১×'; b.classList.toggle('on', S.rate !== 1); }
   $('#rateBtn').onclick = function () { S.rate = rates[(rates.indexOf(S.rate) + 1) % rates.length]; save(); setRateBtn(); toast('উচ্চারণের গতি: ' + rateLbl[S.rate]); };
 
+  /* ---------- theme (light default; remember in localStorage) ---------- */
+  var THEME_KEY = 'dk.theme', THEME_COLORS = { light: '#12355b', dark: '#1a222c' };
+  function currentTheme() { return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; }
+  function applyTheme(theme, persist) {
+    theme = theme === 'dark' ? 'dark' : 'light';
+    if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    var meta = document.getElementById('themeColor') || $('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', THEME_COLORS[theme]);
+    var btn = $('#themeBtn');
+    if (btn) {
+      btn.setAttribute('aria-label', theme === 'dark' ? 'লাইট থিম' : 'ডার্ক থিম');
+      btn.title = theme === 'dark' ? 'লাইট থিম / Light' : 'ডার্ক থিম / Dark';
+    }
+    if (persist !== false) {
+      try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+    }
+  }
+  applyTheme(currentTheme(), false); // sync meta/aria with pre-paint choice
+  $('#themeBtn').onclick = function () {
+    var next = currentTheme() === 'dark' ? 'light' : 'dark';
+    applyTheme(next, true);
+    toast(next === 'dark' ? 'ডার্ক থিম' : 'লাইট থিম');
+  };
+
   /* ---------- views ---------- */
   function levelProgress(L, id) { var n = L.chapters.filter(function (c) { return S.done[chKey(id, c.id)]; }).length; return { n: n, total: L.chapters.length }; }
   function continueHTML(lv) {

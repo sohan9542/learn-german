@@ -3,8 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1a222c">
+<meta name="theme-color" content="#12355b" id="themeColor">
 <title>Deutsch kompakt – বাংলায় জার্মান</title>
+<script>
+(function () {
+  try {
+    if (localStorage.getItem('dk.theme') === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      var m = document.getElementById('themeColor');
+      if (m) m.setAttribute('content', '#1a222c');
+    }
+  } catch (e) {}
+})();
+</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -19,6 +30,7 @@
   <div class="barrow">
     <a href="#/" class="brand" id="brand">Deutsch <b>kompakt</b><small id="userPill" hidden></small></a>
     <div class="baractions">
+      <button id="themeBtn" class="pill" type="button" title="থিম / Theme" aria-label="থিম বদলান"><span class="ico-moon" aria-hidden="true">☾</span><span class="ico-sun" aria-hidden="true">☀</span></button>
       <button id="rateBtn" class="pill" title="গতি / Speed">১×</button>
       <a href="#/stars" class="pill" id="starLink" title="আমার শব্দ">★ <span id="starCount">0</span></a>
       <a href="#/practice" class="pill" id="pracLink" title="শব্দ অনুশীলন · Üben">🃏</a>
