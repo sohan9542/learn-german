@@ -452,6 +452,20 @@
   function today() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
   function endOfDay() { var d = new Date(); d.setHours(23, 59, 59, 999); return +d; }
   function shuffle(a) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  // Hard/বুঝিনি: put a copy far back in this session (≥ ~15–20 cards later, or at end). Never next.
+  var HARD_GAP_MIN = 15, HARD_GAP_JITTER = 6; // 15–21
+  function requeueFar(q, i, card) {
+    var remain = q.length - i - 1; // cards after the current one
+    var gap = HARD_GAP_MIN + Math.floor(Math.random() * (HARD_GAP_JITTER + 1));
+    var pos = remain <= gap ? q.length : Math.min(q.length, i + 1 + gap);
+    if (pos <= i + 1) pos = q.length; // never immediately next
+    q.splice(pos, 0, card);
+  }
+  function advancePast(session, answeredId) {
+    session.i++;
+    // never show the same card twice in a row
+    while (session.i < session.q.length && session.q[session.i] && session.q[session.i].id === answeredId) session.i++;
+  }
   var chCards = {};
   // Which tables count as real word lists: every vocabulary table (table.voc), plus A1's number / clock-time /
   // weekday-month / date word tables (by table index in that chapter). Pronunciation drills (A1 ch2) never count.
@@ -569,7 +583,7 @@
       h += '<div class="pfront">' + (p.dir === 'de' ? de : bnHtml) + '</div>';
       if (PS.shown) h += '<div class="pback">' + (p.dir === 'de' ? prHtml + bnHtml : de + prHtml) + '</div>';
       h += '</div>';
-      h += PS.shown ? '<div class="pgrade"><button type="button" class="hard" id="pHard">কঠিন<small>Schwer · শিগগির আবার</small></button><button type="button" class="easy" id="pEasy">সহজ<small>Leicht · অনেক পরে</small></button></div><p class="small center">কার্ড বাঁয়ে সরালে কঠিন, ডানে সরালে সহজ।</p>'
+      h += PS.shown ? '<div class="pgrade"><button type="button" class="hard" id="pHard">কঠিন<small>Schwer · পরে আবার</small></button><button type="button" class="easy" id="pEasy">সহজ<small>Leicht · অনেক পরে</small></button></div><p class="small center">কার্ড বাঁয়ে সরালে কঠিন, ডানে সরালে সহজ।</p>'
         : '<button type="button" class="pbtn" id="pShow">উত্তর দেখুন</button>' + (p.dir === 'de' ? '<p class="small center">জার্মান শব্দে চাপ দিলে উচ্চারণ শুনবেন।</p>' : '');
     }
     h += '<details class="psrcs"' + (pool.length ? '' : ' open') + '><summary>কোন অধ্যায়ের শব্দ? (' + bn(chs.filter(function (x) { return !p.ex[x.key]; }).length) + 'টি অধ্যায়)</summary>';
@@ -590,8 +604,8 @@
   function answer(easy) {
     var c = PS.q[PS.i]; if (!c || !PS.shown) return;
     grade(c, easy, PS.rnd);
-    PS.n++; if (easy) PS.easy++; else { PS.hard++; var pos = Math.min(PS.q.length, PS.i + 3 + Math.floor(Math.random() * 3)); PS.q.splice(pos, 0, c); }
-    PS.i++; PS.shown = false; drawPractice(PS.chs);
+    PS.n++; if (easy) PS.easy++; else { PS.hard++; requeueFar(PS.q, PS.i, c); }
+    advancePast(PS, c.id); PS.shown = false; drawPractice(PS.chs);
   }
   function wirePractice(chs) {
     PS.chs = chs;
@@ -804,7 +818,7 @@
         if (LS.guess && LS.guess.trim()) {
           h += '<div class="ldiff"><div class="small">আপনার লেখা:</div><p>' + dictationDiff(LS.guess, c.t) + '</p></div>';
         }
-        h += '<div class="pgrade"><button type="button" class="hard" id="lHard">বুঝিনি<small>Schwer · শিগগির আবার</small></button>';
+        h += '<div class="pgrade"><button type="button" class="hard" id="lHard">বুঝিনি<small>Schwer · পরে আবার</small></button>';
         h += '<button type="button" class="easy" id="lEasy">বুঝেছি<small>Verstanden · পরেরটি</small></button></div>';
       }
     }
@@ -848,8 +862,8 @@
     if (!LS || !LS.shown || LS.i >= LS.q.length) return;
     var c = LS.q[LS.i];
     listenGrade(c, ok);
-    LS.n++; if (ok) LS.ok++; else { LS.hard++; var pos = Math.min(LS.q.length, LS.i + 2 + Math.floor(Math.random() * 3)); LS.q.splice(pos, 0, c); }
-    LS.i++; LS.shown = false; LS.guess = ''; LS._played = false;
+    LS.n++; if (ok) LS.ok++; else { LS.hard++; requeueFar(LS.q, LS.i, c); }
+    advancePast(LS, c.id); LS.shown = false; LS.guess = ''; LS._played = false;
     drawListen(LS.chs);
   }
   document.addEventListener('keydown', function (e) {
