@@ -1,4 +1,4 @@
-/* Deutsch kompakt — tiny static SPA. Routes: #/ (home), #/<level>, #/<level>/<chapter>[/<section>], #/stars, #/practice */
+/* Deutsch kompakt — tiny static SPA. Routes: #/ (home), #/<level>, #/<level>/<chapter>[/<section>], #/stars, #/practice, #/listen */
 (function () {
   'use strict';
   var KEY = 'dk.v1';
@@ -43,30 +43,40 @@
     deVoice = vs.filter(function (v) { return /google|natural|neural|online/i.test(v.name); })[0] || vs[0] || null;
   }
   if (window.speechSynthesis) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
-  function speakTTS(text, el) {
-    if (!window.speechSynthesis) { done(el); toast('এই ব্রাউজারে অডিও নেই'); return; }
+  function speakTTS(text, el, rate, onEnd) {
+    if (!window.speechSynthesis) { done(el); if (onEnd) onEnd(); toast('এই ব্রাউজারে অডিও নেই'); return; }
     speechSynthesis.cancel();
     var u = new SpeechSynthesisUtterance(text); u.lang = 'de-DE'; if (deVoice) u.voice = deVoice;
-    u.rate = 0.9 * S.rate; u.onend = u.onerror = function () { done(el); };
+    u.rate = 0.9 * (rate == null ? S.rate : rate);
+    var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
+    u.onend = u.onerror = fin;
     speechSynthesis.speak(u);
   }
   function done(el) { if (el) el.classList.remove('playing'); }
-  function play(el) {
+  function play(el, rate, onEnd) {
     var key = el.getAttribute('data-a'), text = el.getAttribute('data-t') || el.textContent;
+    var r = rate == null ? S.rate : rate;
     if (current) current.classList.remove('playing');
-    current = el; el.classList.add('playing');
+    current = el; if (el) el.classList.add('playing');
     try { player.pause(); } catch (e) {}
     if (window.speechSynthesis) speechSynthesis.cancel();
     window.__lastPlayed = { key: key, text: text };
-    if (!key) return speakTTS(text, el);
+    var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
+    if (!key) return speakTTS(text, el, r, onEnd);
     var fellBack = false;
-    var fb = function () { if (fellBack) return; fellBack = true; window.__lastPlayed.fallback = true; speakTTS(text, el); };
-    player.onended = function () { done(el); };
+    var fb = function () { if (fellBack) return; fellBack = true; window.__lastPlayed.fallback = true; speakTTS(text, el, r, onEnd); };
+    player.onended = fin;
     player.onerror = fb;
     player.src = 'audio/' + key + '.mp3';
-    player.playbackRate = S.rate;
+    player.playbackRate = r;
     var p = player.play();
-    if (p && p.catch) p.catch(function (err) { if (err && err.name === 'NotAllowedError') { done(el); } else fb(); });
+    if (p && p.catch) p.catch(function (err) { if (err && err.name === 'NotAllowedError') { fin(); } else fb(); });
+  }
+  function playText(key, text, rate, onEnd, el) {
+    var ghost = el || document.createElement('button');
+    if (!el) { ghost.className = 'say'; ghost.type = 'button'; ghost.setAttribute('data-a', key || ''); ghost.setAttribute('data-t', text || ''); ghost.hidden = true; }
+    play(ghost, rate, onEnd);
+    return ghost;
   }
   document.addEventListener('click', function (e) {
     var t = e.target;
@@ -144,7 +154,7 @@
       var d = $('#drawer');
       var h = '<h3>অধ্যায়সমূহ · Inhalt</h3><div class="lv">' + window.LEVELS.map(function (l) {
         return l.ready ? '<a href="#/' + l.id + '" class="' + (l.id === lv ? 'cur' : '') + '">' + l.title + '</a>' : '<span>' + l.title + ' <small>শীঘ্রই</small></span>';
-      }).join('') + '<a href="#/">হোম</a><a href="#/stars">★ আমার শব্দ</a><a href="#/practice" class="prk">🃏 শব্দ অনুশীলন</a></div>' + userBlockHTML() + '<ul>';
+      }).join('') + '<a href="#/">হোম</a><a href="#/stars">★ আমার শব্দ</a><a href="#/practice" class="prk">🃏 শব্দ অনুশীলন</a><a href="#/listen" class="prk">🎧 শুনে বোঝো</a></div>' + userBlockHTML() + '<ul>';
       if (L) L.chapters.forEach(function (c) {
         var cur = view && view.ch === c.id;
         h += '<li class="l1' + (cur ? ' cur' : '') + '"><a href="#/' + lv + '/' + c.id + '">' + esc(c.num) + ' — ' + esc(c.title) + (S.done[chKey(lv, c.id)] ? '<span class="tick">✓</span>' : '') + '</a></li>';
@@ -273,7 +283,7 @@
   /* ---------- username login + cloud sync (Supabase PostgREST, plain fetch) ---------- */
   var SB_URL = 'https://npmbyjqmunltxqhlserd.supabase.co', SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wbWJ5anFtdW5sdHhxaGxzZXJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyNjc0NDEsImV4cCI6MjEwODg0MzQ0MX0.M-icjwR4a0Oc5mddYebYMdKjF0PaUw4ShHq0QknJPGY';
   var UKEY = 'dk.user', QKEY = 'dk.sync';
-  var SYNC_KEYS = ['done', 'stars', 'last', 'lastBy', 'scroll', 'rate', 'prac'];
+  var SYNC_KEYS = ['done', 'stars', 'last', 'lastBy', 'scroll', 'rate', 'prac', 'listen'];
   var USER = (function () { try { return JSON.parse(localStorage.getItem(UKEY) || 'null'); } catch (e) { return null; } })(); // {name} | {skip:true} | null
   var SNAP = {}; snapshot();
   function snapshot() { SYNC_KEYS.forEach(function (k) { SNAP[k] = JSON.stringify(S[k] === undefined ? null : S[k]); }); }
@@ -293,7 +303,7 @@
   }
   function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
   function blob() { var b = { v: S.v, _t: S._t || {}, _m: S._m || {} }; SYNC_KEYS.forEach(function (k) { b[k] = S[k]; }); return b; }
-  function hasData(d) { return !!d && (Object.keys(d.done || {}).length || Object.keys(d.stars || {}).length || d.last || Object.keys((d.prac || {}).srs || {}).length); }
+  function hasData(d) { return !!d && (Object.keys(d.done || {}).length || Object.keys(d.stars || {}).length || d.last || Object.keys((d.prac || {}).srs || {}).length || Object.keys((d.listen || {}).srs || {}).length); }
   function mergeState(L, R) { // L = local, R = remote; returns merged blob
     var out = { v: Math.max(L.v || 0, R.v || 0), _t: {}, _m: {} }, Lt = L._t || {}, Rt = R._t || {}, Lm = L._m || {}, Rm = R._m || {};
     ['done', 'stars'].forEach(function (k) { // per entry: the side that changed it last wins; otherwise union
@@ -318,6 +328,13 @@
     prac.srs = srs;
     var nl = pl.nd || {}, nr = pr.nd || {}; if (nl.day && nl.day === nr.day) prac.nd = { day: nl.day, n: Math.max(nl.n || 0, nr.n || 0) };
     if (pl.srs || pr.srs || pl.dir || pr.dir) out.prac = prac;
+    // listening progress lives in the same jsonb blob — no DB schema change
+    var ll = L.listen || {}, lr = R.listen || {}, lnew = (Lt.listen || 0) >= (Rt.listen || 0) ? ll : lr, lold = lnew === ll ? lr : ll;
+    var listen = Object.assign({}, lold, lnew), lsrs = {}, lsl = ll.srs || {}, lsr = lr.srs || {};
+    Object.keys(lsl).concat(Object.keys(lsr)).forEach(function (id) { var a = lsl[id], b = lsr[id]; lsrs[id] = !a ? b : !b ? a : ((a.at || 0) >= (b.at || 0) ? a : b); });
+    listen.srs = lsrs;
+    var lnl = ll.nd || {}, lnr = lr.nd || {}; if (lnl.day && lnl.day === lnr.day) listen.nd = { day: lnl.day, n: Math.max(lnl.n || 0, lnr.n || 0) };
+    if (ll.srs || lr.srs || ll.lv || lr.lv || ll.ch || lr.ch) out.listen = listen;
     SYNC_KEYS.forEach(function (k) { var t = Math.max(Lt[k] || 0, Rt[k] || 0); if (t) out._t[k] = t; });
     return out;
   }
@@ -607,13 +624,248 @@
     else if (PS.shown && (e.key === '2' || e.key === 'ArrowRight')) answer(true);
   });
   function practiceTile() {
-    return '<a class="praclink" href="#/practice"><b>🃏 শব্দ অনুশীলন</b><small>Wörter üben · শেষ করা অধ্যায়ের শব্দ ফ্ল্যাশকার্ডে, সহজ/কঠিন চিহ্ন দিয়ে</small></a>';
+    return '<a class="praclink" href="#/practice"><b>🃏 শব্দ অনুশীলন</b><small>Wörter üben · শেষ করা অধ্যায়ের শব্দ ফ্ল্যাশকার্ডে, সহজ/কঠিন চিহ্ন দিয়ে</small></a>' +
+      '<a class="praclink listenlink" href="#/listen"><b>🎧 শুনে বোঝো</b><small>Hören · A1 বাক্য শুনে অর্থ বোঝার অনুশীলন</small></a>';
   }
+
+  /* ---------- listening practice (Hören) — A1 only for now; LISTEN_LEVELS ready for a2/b1 later ---------- */
+  var LISTEN_LEVELS = ['a1']; // extend with 'a2','b1' when those sentence pools are enabled
+  var LS = null; // listening session
+  function Lst() {
+    S.listen = Object.assign({ lv: 'a1', ch: 'done', srs: {}, nd: { day: '', n: 0 } }, S.listen || {});
+    if (LISTEN_LEVELS.indexOf(S.listen.lv) < 0) S.listen.lv = LISTEN_LEVELS[0];
+    return S.listen;
+  }
+  function isListeningPhrase(t) {
+    var clean = String(t || '').replace(/\([^)]*\)/g, '').trim();
+    if (!clean) return false;
+    // conjugation paradigms: "sein – war – ist gewesen"
+    if ((clean.match(/\s[–—-]\s/g) || []).length >= 2) return false;
+    var words = clean.split(/\s+/).filter(Boolean);
+    if (words.length < 2) return false;
+    // bare article+noun vocab rows
+    if (words.length === 2 && /^(der|die|das|ein|eine)$/i.test(words[0]) && !/[.!?…]/.test(clean)) return false;
+    if (/^(der|die|das)\s+\S+,?\s*[¨'′]?\s*-/.test(clean)) return false;
+    return true;
+  }
+  function chapterListening(lv, c) {
+    // reuse chapterCards; keep non-vocab example rows that are real phrases/sentences
+    return chapterCards(lv, c).filter(function (card) {
+      if (!card.bn || !card.t) return false;
+      if (!isListeningPhrase(card.t)) return false;
+      // vocab-table singles are excluded by isListeningPhrase; allow multi-word voc sentences too
+      if (card.voc) {
+        var w = card.t.trim().split(/\s+/).length;
+        return w >= 3 || /[.!?]/.test(card.t);
+      }
+      return true;
+    }).map(function (card) {
+      return { id: card.id, t: card.t, html: card.html, bn: card.bn, pr: card.pr, src: card.src, ch: c.id };
+    });
+  }
+  function listenChapters(lv) {
+    return getLevel(lv).then(function (L) {
+      if (!L) return [];
+      return L.chapters.map(function (c) {
+        return { lv: lv, c: c, key: chKey(lv, c.id), n: chapterListening(lv, c).length, done: !!S.done[chKey(lv, c.id)] };
+      }).filter(function (x) { return x.n > 0; });
+    });
+  }
+  function listenPool(chs, opts) {
+    var st = Lst(), seen = {}, pool = [], chFilter = (opts && opts.ch) || st.ch;
+    var use = chs;
+    if (chFilter && chFilter !== 'all' && chFilter !== 'done') {
+      use = chs.filter(function (x) { return x.c.id === chFilter; });
+    } else if (chFilter === 'done') {
+      use = chs.filter(function (x) { return x.done; });
+      if (!use.length) use = chs; // fallback: all chapters of the level
+    }
+    use.forEach(function (x) {
+      chapterListening(x.lv, x.c).forEach(function (card) {
+        if (seen[card.id]) return; seen[card.id] = 1; pool.push(card);
+      });
+    });
+    return pool;
+  }
+  function listenGrade(card, ok) {
+    var p = Lst(), r = p.srs[card.id], now = Date.now();
+    if (!r) { if (p.nd.day !== today()) p.nd = { day: today(), n: 0 }; p.nd.n++; }
+    if (ok) {
+      var n = (r && r.last === 'e') ? Math.min((r.n || 0) + 1, STEPS.length - 1) : 0;
+      p.srs[card.id] = { n: n, due: now + STEPS[n] * DAY, last: 'e', h: r ? r.h || 0 : 0, at: now };
+    } else {
+      p.srs[card.id] = { n: -1, due: now + 10 * 60 * 1000, last: 'h', h: (r ? r.h || 0 : 0) + 1, at: now };
+    }
+    save();
+  }
+  function listenStats(pool) {
+    var s = Lst().srs, e = endOfDay(), st = { due: 0, ok: 0, hard: 0, fresh: 0 };
+    pool.forEach(function (c) {
+      var r = s[c.id]; if (!r) { st.fresh++; return; }
+      if (r.due <= e) st.due++;
+      if (r.last === 'e') st.ok++; else st.hard++;
+    });
+    return st;
+  }
+  function startListenSession(pool) {
+    var now = Date.now(), due = [], fresh = [];
+    pool.forEach(function (c) {
+      var r = Lst().srs[c.id];
+      if (!r) fresh.push(c); else if (r.due <= now) due.push(c);
+    });
+    shuffle(due); fresh = shuffle(fresh).slice(0, newLeftListen());
+    var q = [];
+    while (due.length || fresh.length) {
+      var pick = !fresh.length ? due : !due.length ? fresh : (Math.random() < due.length / (due.length + fresh.length) ? due : fresh);
+      q.push(pick.shift());
+    }
+    if (!q.length && pool.length) q = shuffle(pool.slice()).slice(0, 20);
+    LS = { pool: pool, q: q, i: 0, shown: false, guess: '', n: 0, ok: 0, hard: 0, key: poolKey(pool) };
+  }
+  function newLeftListen() {
+    var p = Lst(); if (p.nd.day !== today()) p.nd = { day: today(), n: 0 };
+    return Math.max(0, 20 - p.nd.n);
+  }
+  function normDe(s) {
+    return String(s || '').toLowerCase().replace(/[^\wäöüß\s]/gi, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function dictationDiff(guess, correct) {
+    var g = normDe(guess).split(' ').filter(Boolean), c = normDe(correct).split(' ').filter(Boolean);
+    if (!g.length) return '';
+    var gi = 0, html = '';
+    c.forEach(function (w) {
+      if (gi < g.length && g[gi] === w) { html += '<span class="dok">' + esc(g[gi]) + '</span> '; gi++; }
+      else if (gi < g.length) { html += '<span class="dbad">' + esc(g[gi]) + '</span> '; gi++; }
+      else html += '<span class="dmiss">' + esc(w) + '</span> ';
+    });
+    while (gi < g.length) { html += '<span class="dbad">' + esc(g[gi++]) + '</span> '; }
+    return html.trim();
+  }
+  function listenPlay(rate) {
+    if (!LS || LS.i >= LS.q.length) return;
+    var c = LS.q[LS.i], el = $('#lSay');
+    if (el) play(el, rate == null ? 1 : rate);
+    else playText(c.id, c.t, rate == null ? 1 : rate);
+  }
+  function renderListen() {
+    view = null; $('#readbar').style.width = '0';
+    var st = Lst(), lv = st.lv;
+    listenChapters(lv).then(function (chs) {
+      var pool = listenPool(chs);
+      if (!LS || LS.key !== poolKey(pool)) startListenSession(pool);
+      LS.chs = chs;
+      drawListen(chs);
+      scrollTo(0, 0);
+    });
+  }
+  function drawListen(chs) {
+    var st = Lst(), pool = LS.pool, stats = listenStats(pool);
+    var h = '<div class="page listen"><h1 class="chapter"><span class="num">🎧 A1 · ' + bn(pool.length) + 'টি বাক্য</span>শুনে বোঝো<span class="de">Hören üben</span></h1>';
+    h += '<p class="small">জার্মান বাক্য শুনুন (লেখা লুকানো)। বুঝতে পারলে ✓, না পারলে সেটা আবার বেশি আসবে।</p>';
+    h += '<div class="pstats"><div><b>' + bn(stats.due) + '</b><small>আজ বাকি</small></div><div><b>' + bn(stats.ok) + '</b><small>বুঝেছি</small></div><div><b>' + bn(stats.hard) + '</b><small>কঠিন</small></div><div><b>' + bn(stats.fresh) + '</b><small>নতুন</small></div></div>';
+
+    // chapter filter (A1 only — level fixed via LISTEN_LEVELS)
+    h += '<div class="lfilters"><label>অধ্যায় <select id="lCh">';
+    h += '<option value="done"' + (st.ch === 'done' ? ' selected' : '') + '>শেষ করা অধ্যায় (ডিফল্ট)</option>';
+    h += '<option value="all"' + (st.ch === 'all' ? ' selected' : '') + '>A1-এর সব অধ্যায়</option>';
+    chs.forEach(function (x) {
+      h += '<option value="' + x.c.id + '"' + (st.ch === x.c.id ? ' selected' : '') + '>' + esc(x.c.num) + ' — ' + esc(x.c.title) + ' (' + bn(x.n) + ')' + (x.done ? ' ✓' : '') + '</option>';
+    });
+    h += '</select></label></div>';
+
+    if (!pool.length) {
+      h += '<div class="pempty"><p><b>এই বাছাইয়ে শোনার বাক্য নেই।</b></p><p>অধ্যায় বদলান, অথবা A1-এর ব্যাকরণ/সংলাপ অধ্যায় পড়ে "অধ্যায় শেষ ✓" দিন।</p><a class="continue" href="#/a1">A1 অধ্যায়ে যান →</a></div>';
+    } else if (LS.i >= LS.q.length) {
+      h += '<div class="pempty"><p class="big">🎉</p><p><b>' + (LS.n ? 'এই সেশন শেষ! ' + bn(LS.n) + 'টি (বুঝেছি ' + bn(LS.ok) + ' · বুঝিনি ' + bn(LS.hard) + ')' : 'আজকের শোনা শেষ!') + '</b></p>' +
+        '<button class="pbtn" id="lAgain" type="button">আবার শুরু করুন</button>' +
+        '<button class="pbtn alt" id="lRandom" type="button">এলোমেলো ২০টি</button></div>';
+    } else {
+      var c = LS.q[LS.i];
+      h += '<div class="psess">বাক্য ' + bn(LS.i + 1) + '/' + bn(LS.q.length) + ' · এই সেশনে ' + bn(LS.n) + ' (বুঝেছি ' + bn(LS.ok) + ' · বুঝিনি ' + bn(LS.hard) + ')</div>';
+      h += '<div class="fcard lcard' + (LS.shown ? ' shown' : '') + '" id="lcard">';
+      h += '<div class="psrc">' + esc(c.src) + (Lst().srs[c.id] ? '' : ' · <i>নতুন</i>') + '</div>';
+      if (!LS.shown) {
+        h += '<div class="pfront lhidden"><div class="lear" aria-hidden="true">🎧</div><p class="lhint">জার্মান বাক্য লুকানো — শুনুন</p></div>';
+      } else {
+        h += '<div class="pfront"><div class="pde"><span class="say" id="lSay" data-a="' + esc(c.id) + '" data-t="' + esc(c.t) + '">' + c.html + '</span></div></div>';
+        h += '<div class="pback"><div class="pbn">' + esc(c.bn) + '</div>' + (c.pr ? '<div class="ppr">' + esc(c.pr) + '</div>' : '') + '</div>';
+      }
+      // hidden say node so replay works before reveal
+      if (!LS.shown) h += '<span class="say" id="lSay" hidden data-a="' + esc(c.id) + '" data-t="' + esc(c.t) + '"></span>';
+      h += '</div>';
+
+      h += '<div class="lplay"><button type="button" class="pbtn alt" id="lReplay">↻ আবার শুনুন</button>';
+      h += '<button type="button" class="pbtn alt" id="lSlow">🐌 ধীরে (~০.৭×)</button></div>';
+
+      if (!LS.shown) {
+        h += '<label class="ldict">শুনে যা লিখতে পারেন (ঐচ্ছিক)<textarea id="lGuess" rows="2" placeholder="যা শুনেছেন লিখুন…" autocomplete="off" autocorrect="off" spellcheck="false">' + esc(LS.guess || '') + '</textarea></label>';
+        h += '<button type="button" class="pbtn" id="lReveal">দেখো</button>';
+      } else {
+        if (LS.guess && LS.guess.trim()) {
+          h += '<div class="ldiff"><div class="small">আপনার লেখা:</div><p>' + dictationDiff(LS.guess, c.t) + '</p></div>';
+        }
+        h += '<div class="pgrade"><button type="button" class="hard" id="lHard">বুঝিনি<small>Schwer · শিগগির আবার</small></button>';
+        h += '<button type="button" class="easy" id="lEasy">বুঝেছি<small>Verstanden · পরেরটি</small></button></div>';
+      }
+    }
+    h += '</div>';
+    app.innerHTML = h; app.setAttribute('data-view', 'listen');
+    wireListen(chs);
+  }
+  function wireListen(chs) {
+    var st = Lst();
+    if ($('#lCh')) $('#lCh').onchange = function () {
+      st.ch = this.value; save();
+      var pool = listenPool(chs); startListenSession(pool); LS.chs = chs; drawListen(chs);
+    };
+    if ($('#lAgain')) $('#lAgain').onclick = function () { startListenSession(LS.pool); LS.chs = chs; drawListen(chs); };
+    if ($('#lRandom')) $('#lRandom').onclick = function () {
+      LS = { pool: LS.pool, q: shuffle(LS.pool.slice()).slice(0, 20), i: 0, shown: false, guess: '', n: 0, ok: 0, hard: 0, key: LS.key, chs: chs };
+      drawListen(chs);
+    };
+    if ($('#lReplay')) $('#lReplay').onclick = function () { listenPlay(1); };
+    if ($('#lSlow')) $('#lSlow').onclick = function () { listenPlay(0.7); };
+    if ($('#lGuess')) $('#lGuess').oninput = function () { LS.guess = this.value; };
+    if ($('#lReveal')) $('#lReveal').onclick = function () {
+      if ($('#lGuess')) LS.guess = $('#lGuess').value;
+      LS.shown = true; drawListen(chs);
+    };
+    if ($('#lEasy')) $('#lEasy').onclick = function () { listenAnswer(true); };
+    if ($('#lHard')) $('#lHard').onclick = function () { listenAnswer(false); };
+    var card = $('#lcard');
+    if (card && !LS.shown) card.addEventListener('click', function (e) {
+      if (e.target.closest('.say, button, a, textarea, input, select')) return;
+      if ($('#lGuess')) LS.guess = $('#lGuess').value;
+      LS.shown = true; drawListen(chs);
+    });
+    // auto-play when a fresh (hidden) card is shown
+    if (LS && LS.i < LS.q.length && !LS.shown && !LS._played) {
+      LS._played = true;
+      setTimeout(function () { if (location.hash === '#/listen') listenPlay(1); }, 280);
+    }
+  }
+  function listenAnswer(ok) {
+    if (!LS || !LS.shown || LS.i >= LS.q.length) return;
+    var c = LS.q[LS.i];
+    listenGrade(c, ok);
+    LS.n++; if (ok) LS.ok++; else { LS.hard++; var pos = Math.min(LS.q.length, LS.i + 2 + Math.floor(Math.random() * 3)); LS.q.splice(pos, 0, c); }
+    LS.i++; LS.shown = false; LS.guess = ''; LS._played = false;
+    drawListen(LS.chs);
+  }
+  document.addEventListener('keydown', function (e) {
+    if (location.hash !== '#/listen' || !LS || e.target.closest('input,select,textarea')) return;
+    if ((e.key === ' ' || e.key === 'Enter') && !LS.shown) { e.preventDefault(); if ($('#lReveal')) $('#lReveal').click(); }
+    else if (LS.shown && (e.key === '1' || e.key === 'ArrowLeft')) listenAnswer(false);
+    else if (LS.shown && (e.key === '2' || e.key === 'ArrowRight')) listenAnswer(true);
+    else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); listenPlay(1); };
+  });
 
   /* ---------- router ---------- */
   var firstLoad = true;
   function route() {
     closeDrawer(); persistPos();
+    // stop leftover speech when leaving listen
+    if (location.hash.indexOf('listen') < 0 && window.speechSynthesis) try { speechSynthesis.cancel(); } catch (e) {}
     var hsh = location.hash.replace(/^#\/?/, ''), parts = hsh.split('/').filter(Boolean);
     if (parts[0] === 'login' || !USER) return renderLogin();
     var resume = false;
@@ -624,6 +876,7 @@
     if (!parts.length) return renderHome();
     if (parts[0] === 'stars') return renderStars();
     if (parts[0] === 'practice') return renderPractice();
+    if (parts[0] === 'listen') return renderListen();
     if (parts.length === 1) return renderLevel(parts[0]);
     renderChapter(parts[0], parts[1], parts[2], resume);
   }

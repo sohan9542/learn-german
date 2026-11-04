@@ -232,6 +232,26 @@ details.psrcs label { display: block; padding: 7px 0; border-bottom: 1px dotted 
 details.psrcs input { transform: scale(1.25); margin-right: 8px; }
 details.psrcs select { font: inherit; padding: 2px 6px; }
 
+/* listening practice */
+.praclink.listenlink { margin-top: -6px; border-color: #2a6a9e; }
+.lfilters { margin: 4px 0 12px; }
+.lfilters label { display: block; font-size: 14px; color: var(--muted); font-weight: 600; }
+.lfilters select { display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 15px; padding: 10px 12px; border: 2px solid var(--navy); border-radius: 10px; background: #fff; color: var(--ink); }
+.lcard .lhidden { padding: 12px 0 4px; }
+.lcard .lear { font-size: 48px; line-height: 1; margin-bottom: 8px; }
+.lcard .lhint { margin: 0; color: var(--muted); font-size: 15px; }
+.lcard:not(.shown) .pfront::after,
+html[data-theme="dark"] .lcard:not(.shown) .pfront::after { content: none !important; display: none !important; }
+.lplay { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 4px; }
+.lplay .pbtn { margin: 0; font-size: 15px; padding: 12px 8px; }
+.ldict { display: block; margin: 10px 0 4px; font-size: 13.5px; color: var(--muted); font-weight: 600; }
+.ldict textarea { display: block; width: 100%; margin-top: 6px; font: inherit; font-size: 16px; padding: 10px 12px; border: 2px solid var(--line); border-radius: 10px; resize: vertical; min-height: 64px; background: #fff; color: var(--ink); }
+.ldiff { margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: #f5f8fb; border: 1px solid var(--line); text-align: left; }
+.ldiff p { margin: 4px 0 0; font-size: 16px; line-height: 1.55; font-family: "Noto Sans", sans-serif; }
+.ldiff .dok { color: var(--n); font-weight: 600; }
+.ldiff .dbad { color: var(--f); font-weight: 600; text-decoration: line-through; }
+.ldiff .dmiss { color: var(--muted); border-bottom: 2px dotted var(--gold); }
+
 /* login + sync */
 .brand small { display: block; font-family: "Noto Sans", sans-serif; font-size: 11px; color: #c9d6e2; line-height: 1; margin-top: 1px; }
 .userbox { margin: 10px 0 4px; padding: 8px 12px; border-radius: 10px; background: #f5f8fb; border: 1px solid var(--line); font-size: 14px; color: var(--ink); }
@@ -658,6 +678,20 @@ html[data-theme="dark"] details.psrcs label { display: block; padding: 7px 0; bo
 html[data-theme="dark"] details.psrcs input { transform: scale(1.25); margin-right: 8px; }
 
 html[data-theme="dark"] details.psrcs select { font: inherit; padding: 2px 6px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
+
+html[data-theme="dark"] .praclink.listenlink { margin-top: -6px; border-color: #5a8ab8; }
+html[data-theme="dark"] .lfilters { margin: 4px 0 12px; }
+html[data-theme="dark"] .lfilters label { display: block; font-size: 14px; color: var(--muted); font-weight: 600; }
+html[data-theme="dark"] .lfilters select { display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 15px; padding: 10px 12px; border: 2px solid var(--navy2); border-radius: 10px; background: var(--elev); color: var(--ink); }
+html[data-theme="dark"] .lcard .lhint { margin: 0; color: var(--muted); font-size: 15px; }
+html[data-theme="dark"] .lplay { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 4px; }
+html[data-theme="dark"] .ldict { display: block; margin: 10px 0 4px; font-size: 13.5px; color: var(--muted); font-weight: 600; }
+html[data-theme="dark"] .ldict textarea { display: block; width: 100%; margin-top: 6px; font: inherit; font-size: 16px; padding: 10px 12px; border: 2px solid var(--line); border-radius: 10px; resize: vertical; min-height: 64px; background: var(--elev); color: var(--ink); }
+html[data-theme="dark"] .ldiff { margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: var(--elev); border: 1px solid var(--line); text-align: left; }
+html[data-theme="dark"] .ldiff p { margin: 4px 0 0; font-size: 16px; line-height: 1.55; font-family: "Noto Sans", sans-serif; }
+html[data-theme="dark"] .ldiff .dok { color: var(--n); font-weight: 600; }
+html[data-theme="dark"] .ldiff .dbad { color: var(--f); font-weight: 600; text-decoration: line-through; }
+html[data-theme="dark"] .ldiff .dmiss { color: var(--muted); border-bottom: 2px dotted var(--gold); }
 
 html[data-theme="dark"] .brand small { display: block; font-family: "Noto Sans", sans-serif; font-size: 11px; color: #c9d6e2; line-height: 1; margin-top: 1px; }
 
