@@ -38,36 +38,86 @@
 
   /* ---------- audio ---------- */
   var player = new Audio(); player.preload = 'auto';
-  var current = null, deVoice = null;
+  var current = null, deVoice = null, voicesReady = false;
+  // ONLY lang starting with de — never pick by English name tokens (Google/Microsoft/Natural).
+  function isGermanVoice(v) {
+    if (!v) return false;
+    var lang = String(v.lang || '').toLowerCase().replace(/_/g, '-');
+    return lang === 'de' || lang.indexOf('de-') === 0;
+  }
   function voiceScore(v) {
-    var n = (v && v.name) || '', lang = (v && v.lang) || '', s = 0;
-    if (/de-DE/i.test(lang)) s += 5; else if (/^de/i.test(lang)) s += 2;
-    if (/google/i.test(n)) s += 12;
+    // Caller must already pass a German voice; score only ranks within de-* voices.
+    var n = (v && v.name) || '', lang = String((v && v.lang) || '').toLowerCase().replace(/_/g, '-'), s = 0;
+    if (lang === 'de-de') s += 6; else if (lang.indexOf('de-') === 0) s += 3;
+    if (/google/i.test(n) && /deutsch|german|\bde\b/i.test(n)) s += 12;
+    else if (/google/i.test(n)) s += 8;
     if (/microsoft/i.test(n)) s += 10;
     if (/neural|natural|premium|enhanced|online \(natural\)|wavenet|studio/i.test(n)) s += 8;
     if (/online/i.test(n)) s += 3;
-    if (/Anna|Katja|Helena|Ingrid|Conrad|Christoph|Eddy|Seraphina|Fleury/i.test(n)) s += 2;
+    if (/Katja|Conrad|Hedda|Stefan|Google Deutsch|Anna|Helena|Ingrid|Christoph/i.test(n)) s += 3;
     if (/compact|eloquence|basic|espeak/i.test(n)) s -= 6;
     return s;
   }
   function pickVoice() {
-    if (!window.speechSynthesis) return;
-    var vs = speechSynthesis.getVoices().filter(function (v) { return /^de(-|_|$)/i.test(v.lang); });
+    if (!window.speechSynthesis) return null;
+    var all = speechSynthesis.getVoices() || [];
+    if (all.length) voicesReady = true;
+    var vs = all.filter(isGermanVoice);
     vs.sort(function (a, b) { return voiceScore(b) - voiceScore(a); });
     deVoice = vs[0] || null;
-    window.__deVoice = deVoice && { name: deVoice.name, lang: deVoice.lang, score: voiceScore(deVoice) };
+    // Hard guard: never keep a non-German voice object
+    if (deVoice && !isGermanVoice(deVoice)) deVoice = null;
+    window.__deVoice = deVoice ? { name: deVoice.name, lang: deVoice.lang, score: voiceScore(deVoice) } : null;
+    return deVoice;
   }
-  if (window.speechSynthesis) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+  function whenVoicesReady(cb) {
+    if (!window.speechSynthesis) { cb(); return; }
+    pickVoice();
+    if (voicesReady || (speechSynthesis.getVoices() || []).length) { cb(); return; }
+    var done = false;
+    var finish = function () {
+      if (done) return; done = true;
+      try { speechSynthesis.removeEventListener('voiceschanged', finish); } catch (e) {}
+      pickVoice(); cb();
+    };
+    speechSynthesis.addEventListener('voiceschanged', finish);
+    // Chrome sometimes needs a getVoices() kick; Edge may never fire if list already cached empty briefly
+    try { speechSynthesis.getVoices(); } catch (e) {}
+    setTimeout(finish, 400);
+  }
+  if (window.speechSynthesis) {
+    pickVoice();
+    speechSynthesis.addEventListener('voiceschanged', function () { pickVoice(); });
+  }
   function speakTTS(text, el, rate, onEnd) {
     if (!window.speechSynthesis) { done(el); if (onEnd) onEnd(); toast('এই ব্রাউজারে অডিও নেই'); return; }
     speechSynthesis.cancel();
-    if (!deVoice) pickVoice();
-    var u = new SpeechSynthesisUtterance(text); u.lang = (deVoice && deVoice.lang) || 'de-DE'; if (deVoice) u.voice = deVoice;
-    // Natural native speed by default (no artificial 0.9 slowdown)
-    u.rate = rate == null ? S.rate : rate;
     var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
-    u.onend = u.onerror = fin;
-    speechSynthesis.speak(u);
+    whenVoicesReady(function () {
+      // Re-resolve from the live list every speak (stale Voice objects can break Chrome/Edge)
+      pickVoice();
+      var live = null;
+      if (deVoice) {
+        var all = (speechSynthesis.getVoices() || []).filter(isGermanVoice);
+        live = all.filter(function (v) {
+          return (deVoice.voiceURI && v.voiceURI === deVoice.voiceURI) ||
+            (v.name === deVoice.name && String(v.lang).toLowerCase() === String(deVoice.lang).toLowerCase());
+        })[0] || all[0] || null;
+        if (live && !isGermanVoice(live)) live = null;
+      }
+      var u = new SpeechSynthesisUtterance(text);
+      // ALWAYS de-DE — never inherit lang from a voice; never fall back to English voice
+      u.lang = 'de-DE';
+      if (live) {
+        try { u.voice = live; u.lang = 'de-DE'; }
+        catch (e) { /* leave unset; lang stays de-DE */ live = null; }
+      }
+      // Natural native speed by default (no artificial 0.9 slowdown)
+      u.rate = rate == null ? S.rate : rate;
+      u.onend = u.onerror = fin;
+      window.__lastSpoken = { lang: 'de-DE', voice: live ? live.name : null, voiceLang: live ? live.lang : null };
+      speechSynthesis.speak(u);
+    });
   }
   function done(el) { if (el) el.classList.remove('playing'); }
   function play(el, rate, onEnd) {
