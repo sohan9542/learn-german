@@ -252,6 +252,19 @@ html[data-theme="dark"] .lcard:not(.shown) .pfront::after { content: none !impor
 .ldiff .dbad { color: var(--f); font-weight: 600; text-decoration: line-through; }
 .ldiff .dmiss { color: var(--muted); border-bottom: 2px dotted var(--gold); }
 
+/* exam listening */
+.praclink.examlink { margin-top: -6px; border-color: #8a4b2a; }
+.exam .esec { font-size: 18px; margin: 18px 0 6px; color: var(--navy); }
+.examactions { margin: 16px 0 8px; display: grid; gap: 8px; }
+.examvoc { margin-bottom: 8px; }
+.ecard .etrans { font-size: 18px; line-height: 1.45; text-align: left; font-weight: 600; }
+.ekey { background: #fff3bf; color: var(--navy); padding: 0 2px; border-radius: 3px; }
+.eask { margin: 12px 0 4px; }
+.eq { font-weight: 700; font-size: 17px; color: var(--navy); text-align: center; margin: 8px 0 12px; }
+.echoices { display: grid; gap: 8px; }
+.echoice.ok, .echoices .ok { background: #e7f6e7 !important; border: 2px solid var(--n); color: var(--n); }
+.echoice.bad, .echoices .bad { background: #fdecee !important; border: 2px solid var(--f); color: var(--f); }
+
 /* login + sync */
 .brand small { display: block; font-family: "Noto Sans", sans-serif; font-size: 11px; color: #c9d6e2; line-height: 1; margin-top: 1px; }
 .userbox { margin: 10px 0 4px; padding: 8px 12px; border-radius: 10px; background: #f5f8fb; border: 1px solid var(--line); font-size: 14px; color: var(--ink); }
@@ -692,6 +705,14 @@ html[data-theme="dark"] .ldiff p { margin: 4px 0 0; font-size: 16px; line-height
 html[data-theme="dark"] .ldiff .dok { color: var(--n); font-weight: 600; }
 html[data-theme="dark"] .ldiff .dbad { color: var(--f); font-weight: 600; text-decoration: line-through; }
 html[data-theme="dark"] .ldiff .dmiss { color: var(--muted); border-bottom: 2px dotted var(--gold); }
+
+html[data-theme="dark"] .praclink.examlink { margin-top: -6px; border-color: #c4895a; }
+html[data-theme="dark"] .exam .esec { font-size: 18px; margin: 18px 0 6px; color: #c5daf0; }
+html[data-theme="dark"] .ecard .etrans { font-size: 18px; line-height: 1.45; text-align: left; font-weight: 600; color: #e6edf4; }
+html[data-theme="dark"] .ekey { background: #5a4a20; color: #f2e6a0; padding: 0 2px; border-radius: 3px; }
+html[data-theme="dark"] .eq { font-weight: 700; font-size: 17px; color: #c5daf0; text-align: center; margin: 8px 0 12px; }
+html[data-theme="dark"] .echoice.ok, html[data-theme="dark"] .echoices .ok { background: #1e3a1e !important; border: 2px solid var(--n); color: #9dcf9d; }
+html[data-theme="dark"] .echoice.bad, html[data-theme="dark"] .echoices .bad { background: #3a1e22 !important; border: 2px solid var(--f); color: #f0a0a8; }
 
 html[data-theme="dark"] .brand small { display: block; font-family: "Noto Sans", sans-serif; font-size: 11px; color: #c9d6e2; line-height: 1; margin-top: 1px; }
 

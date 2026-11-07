@@ -1,4 +1,4 @@
-/* Deutsch kompakt — tiny static SPA. Routes: #/ (home), #/<level>, #/<level>/<chapter>[/<section>], #/stars, #/practice, #/listen */
+/* Deutsch kompakt — tiny static SPA. Routes: #/ (home), #/<level>, #/<level>/<chapter>[/<section>], #/stars, #/practice, #/listen, #/exam */
 (function () {
   'use strict';
   var KEY = 'dk.v1';
@@ -8,6 +8,8 @@
     S.v = 2; saveLocal();
   }
   S.lastBy = S.lastBy || {};
+  // Global audio speed: 0.7 / 1.0 / 1.15 (exam-fast). Migrate old slow defaults (0.6, 0.75).
+  if (S.rate === 0.6 || S.rate === 0.75 || S.rate == null || [0.7, 1, 1.15].indexOf(+S.rate) < 0) { S.rate = 1; saveLocal(); }
   function load() { try { return Object.assign({ last: null, done: {}, stars: {}, rate: 1, scroll: {} }, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { return { last: null, done: {}, stars: {}, rate: 1, scroll: {} }; } }
   function save() { var ch = stamp(); saveLocal(); if (ch) scheduleSync(); }
   var $ = function (s, r) { return (r || document).querySelector(s); };
@@ -37,17 +39,32 @@
   /* ---------- audio ---------- */
   var player = new Audio(); player.preload = 'auto';
   var current = null, deVoice = null;
+  function voiceScore(v) {
+    var n = (v && v.name) || '', lang = (v && v.lang) || '', s = 0;
+    if (/de-DE/i.test(lang)) s += 5; else if (/^de/i.test(lang)) s += 2;
+    if (/google/i.test(n)) s += 12;
+    if (/microsoft/i.test(n)) s += 10;
+    if (/neural|natural|premium|enhanced|online \(natural\)|wavenet|studio/i.test(n)) s += 8;
+    if (/online/i.test(n)) s += 3;
+    if (/Anna|Katja|Helena|Ingrid|Conrad|Christoph|Eddy|Seraphina|Fleury/i.test(n)) s += 2;
+    if (/compact|eloquence|basic|espeak/i.test(n)) s -= 6;
+    return s;
+  }
   function pickVoice() {
     if (!window.speechSynthesis) return;
     var vs = speechSynthesis.getVoices().filter(function (v) { return /^de(-|_|$)/i.test(v.lang); });
-    deVoice = vs.filter(function (v) { return /google|natural|neural|online/i.test(v.name); })[0] || vs[0] || null;
+    vs.sort(function (a, b) { return voiceScore(b) - voiceScore(a); });
+    deVoice = vs[0] || null;
+    window.__deVoice = deVoice && { name: deVoice.name, lang: deVoice.lang, score: voiceScore(deVoice) };
   }
   if (window.speechSynthesis) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
   function speakTTS(text, el, rate, onEnd) {
     if (!window.speechSynthesis) { done(el); if (onEnd) onEnd(); toast('এই ব্রাউজারে অডিও নেই'); return; }
     speechSynthesis.cancel();
-    var u = new SpeechSynthesisUtterance(text); u.lang = 'de-DE'; if (deVoice) u.voice = deVoice;
-    u.rate = 0.9 * (rate == null ? S.rate : rate);
+    if (!deVoice) pickVoice();
+    var u = new SpeechSynthesisUtterance(text); u.lang = (deVoice && deVoice.lang) || 'de-DE'; if (deVoice) u.voice = deVoice;
+    // Natural native speed by default (no artificial 0.9 slowdown)
+    u.rate = rate == null ? S.rate : rate;
     var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
     u.onend = u.onerror = fin;
     speechSynthesis.speak(u);
@@ -154,7 +171,7 @@
       var d = $('#drawer');
       var h = '<h3>অধ্যায়সমূহ · Inhalt</h3><div class="lv">' + window.LEVELS.map(function (l) {
         return l.ready ? '<a href="#/' + l.id + '" class="' + (l.id === lv ? 'cur' : '') + '">' + l.title + '</a>' : '<span>' + l.title + ' <small>শীঘ্রই</small></span>';
-      }).join('') + '<a href="#/">হোম</a><a href="#/stars">★ আমার শব্দ</a><a href="#/practice" class="prk">🃏 শব্দ অনুশীলন</a><a href="#/listen" class="prk">🎧 শুনে বোঝো</a></div>' + userBlockHTML() + '<ul>';
+      }).join('') + '<a href="#/">হোম</a><a href="#/stars">★ আমার শব্দ</a><a href="#/practice" class="prk">🃏 শব্দ অনুশীলন</a><a href="#/listen" class="prk">🎧 শুনে বোঝো</a><a href="#/exam" class="prk">📻 পরীক্ষার শোনা</a></div>' + userBlockHTML() + '<ul>';
       if (L) L.chapters.forEach(function (c) {
         var cur = view && view.ch === c.id;
         h += '<li class="l1' + (cur ? ' cur' : '') + '"><a href="#/' + lv + '/' + c.id + '">' + esc(c.num) + ' — ' + esc(c.title) + (S.done[chKey(lv, c.id)] ? '<span class="tick">✓</span>' : '') + '</a></li>';
@@ -166,9 +183,13 @@
   function closeDrawer() { $('#drawer').hidden = true; $('#scrim').hidden = true; }
   $('#menuBtn').onclick = openDrawer; $('#scrim').onclick = closeDrawer;
   $('#drawer').addEventListener('click', function (e) { if (e.target.closest('a')) closeDrawer(); });
-  var rates = [1, 0.75, 0.6], rateLbl = { 1: '১×', 0.75: '০.৭৫×', 0.6: 'ধীরে' };
-  function setRateBtn() { var b = $('#rateBtn'); b.textContent = rateLbl[S.rate] || '১×'; b.classList.toggle('on', S.rate !== 1); }
-  $('#rateBtn').onclick = function () { S.rate = rates[(rates.indexOf(S.rate) + 1) % rates.length]; save(); setRateBtn(); toast('উচ্চারণের গতি: ' + rateLbl[S.rate]); };
+  var rates = [0.7, 1, 1.15], rateLbl = { 0.7: '০.৭×', 1: '১×', 1.15: '১.১৫×' };
+  var rateToast = { 0.7: 'ধীরে (০.৭×)', 1: 'স্বাভাবিক (১×)', 1.15: 'পরীক্ষার গতি (১.১৫×)' };
+  function setRateBtn() { var b = $('#rateBtn'); b.textContent = rateLbl[S.rate] || '১×'; b.classList.toggle('on', S.rate !== 1); b.title = 'গতি / Speed · ' + (rateToast[S.rate] || ''); }
+  $('#rateBtn').onclick = function () {
+    var i = rates.indexOf(+S.rate); S.rate = rates[(i < 0 ? 1 : i + 1) % rates.length];
+    save(); setRateBtn(); toast('উচ্চারণের গতি: ' + rateToast[S.rate]);
+  };
 
   /* ---------- theme (light default; remember in localStorage) ---------- */
   var THEME_KEY = 'dk.theme', THEME_COLORS = { light: '#12355b', dark: '#1a222c' };
@@ -283,7 +304,7 @@
   /* ---------- username login + cloud sync (Supabase PostgREST, plain fetch) ---------- */
   var SB_URL = 'https://npmbyjqmunltxqhlserd.supabase.co', SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wbWJ5anFtdW5sdHhxaGxzZXJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyNjc0NDEsImV4cCI6MjEwODg0MzQ0MX0.M-icjwR4a0Oc5mddYebYMdKjF0PaUw4ShHq0QknJPGY';
   var UKEY = 'dk.user', QKEY = 'dk.sync';
-  var SYNC_KEYS = ['done', 'stars', 'last', 'lastBy', 'scroll', 'rate', 'prac', 'listen'];
+  var SYNC_KEYS = ['done', 'stars', 'last', 'lastBy', 'scroll', 'rate', 'prac', 'listen', 'exam'];
   var USER = (function () { try { return JSON.parse(localStorage.getItem(UKEY) || 'null'); } catch (e) { return null; } })(); // {name} | {skip:true} | null
   var SNAP = {}; snapshot();
   function snapshot() { SYNC_KEYS.forEach(function (k) { SNAP[k] = JSON.stringify(S[k] === undefined ? null : S[k]); }); }
@@ -303,7 +324,7 @@
   }
   function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
   function blob() { var b = { v: S.v, _t: S._t || {}, _m: S._m || {} }; SYNC_KEYS.forEach(function (k) { b[k] = S[k]; }); return b; }
-  function hasData(d) { return !!d && (Object.keys(d.done || {}).length || Object.keys(d.stars || {}).length || d.last || Object.keys((d.prac || {}).srs || {}).length || Object.keys((d.listen || {}).srs || {}).length); }
+  function hasData(d) { return !!d && (Object.keys(d.done || {}).length || Object.keys(d.stars || {}).length || d.last || Object.keys((d.prac || {}).srs || {}).length || Object.keys((d.listen || {}).srs || {}).length || Object.keys((d.exam || {}).srs || {}).length); }
   function mergeState(L, R) { // L = local, R = remote; returns merged blob
     var out = { v: Math.max(L.v || 0, R.v || 0), _t: {}, _m: {} }, Lt = L._t || {}, Rt = R._t || {}, Lm = L._m || {}, Rm = R._m || {};
     ['done', 'stars'].forEach(function (k) { // per entry: the side that changed it last wins; otherwise union
@@ -335,6 +356,12 @@
     listen.srs = lsrs;
     var lnl = ll.nd || {}, lnr = lr.nd || {}; if (lnl.day && lnl.day === lnr.day) listen.nd = { day: lnl.day, n: Math.max(lnl.n || 0, lnr.n || 0) };
     if (ll.srs || lr.srs || ll.lv || lr.lv || ll.ch || lr.ch) out.listen = listen;
+    var el = L.exam || {}, er = R.exam || {}, enew = (Lt.exam || 0) >= (Rt.exam || 0) ? el : er, eold = enew === el ? er : el;
+    var exam = Object.assign({}, eold, enew), esrs = {}, esl = el.srs || {}, esr = er.srs || {};
+    Object.keys(esl).concat(Object.keys(esr)).forEach(function (id) { var a = esl[id], b = esr[id]; esrs[id] = !a ? b : !b ? a : ((a.at || 0) >= (b.at || 0) ? a : b); });
+    exam.srs = esrs;
+    var enl = el.nd || {}, enr = er.nd || {}; if (enl.day && enl.day === enr.day) exam.nd = { day: enl.day, n: Math.max(enl.n || 0, enr.n || 0) };
+    if (el.srs || er.srs || el.topic || er.topic) out.exam = exam;
     SYNC_KEYS.forEach(function (k) { var t = Math.max(Lt[k] || 0, Rt[k] || 0); if (t) out._t[k] = t; });
     return out;
   }
@@ -446,8 +473,21 @@
   /* ---------- word practice (flashcards + spaced repetition) ---------- */
   var DAY = 864e5, STEPS = [1, 3, 7, 16, 35, 75, 150, 300];
   function P() {
-    S.prac = Object.assign({ dir: 'de', phr: false, st: true, ex: {}, newPerDay: 20, nd: { day: '', n: 0 }, srs: {} }, S.prac || {});
+    S.prac = Object.assign({ dir: 'de', phr: false, st: true, exam: true, ex: {}, newPerDay: 20, nd: { day: '', n: 0 }, srs: {} }, S.prac || {});
     return S.prac;
+  }
+  function examVocabCards() {
+    var data = window.EXAM_A1, out = [], seen = {};
+    if (!data || !data.topics) return out;
+    data.topics.forEach(function (tp) {
+      (tp.vocab || []).forEach(function (w) {
+        var t = String(w.de || '').trim(); if (!t || seen[t]) return; seen[t] = 1;
+        var id = 'examvoc-' + t.toLowerCase().replace(/[^a-zäöüß0-9]+/gi, '-');
+        var html = w.art ? '<span class="' + ({ der: 'm', die: 'f', das: 'n' }[w.art] || '') + '">' + esc(t) + '</span>' : esc(t);
+        out.push({ id: id, t: t, html: html, pr: '', bn: w.bn || '', voc: true, src: '📻 পরীক্ষা · ' + (tp.titleDe || tp.title) });
+      });
+    });
+    return out;
   }
   function today() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
   function endOfDay() { var d = new Date(); d.setHours(23, 59, 59, 999); return +d; }
@@ -509,6 +549,7 @@
     function add(card) { if (!card.id || seen[card.id]) return; seen[card.id] = 1; pool.push(card); }
     chs.forEach(function (x) { if (p.ex[x.key]) return; chapterPick(x).forEach(add); });
     if (p.st) Object.keys(S.stars).forEach(function (k) { var w = S.stars[k]; add({ id: w.a, t: w.t, html: w.html, pr: w.pr, bn: String(w.bn || '').replace(/[☆★]\s*$/, '').trim(), voc: true, src: '★ আমার শব্দ' }); });
+    if (p.exam) examVocabCards().forEach(add);
     return pool;
   }
   function chapterPick(x) { // word-list cards only, unless "sentences too" is switched on
@@ -591,6 +632,7 @@
     chs.forEach(function (x) { var n = chapterPick(x).length;
       h += '<label><input type="checkbox" data-ch="' + x.key + '"' + (p.ex[x.key] ? '' : ' checked') + '> ' + x.lv.toUpperCase() + ' · ' + esc(x.c.num) + ' — ' + esc(x.c.title) + ' <small>(' + bn(n) + ')</small></label>'; });
     h += '<label><input type="checkbox" id="pSt"' + (p.st ? ' checked' : '') + '> ★ আমার শব্দ <small>(' + bn(Object.keys(S.stars).length) + ')</small></label>';
+    h += '<label><input type="checkbox" id="pExam"' + (p.exam ? ' checked' : '') + '> 📻 পরীক্ষার শব্দ <small>(' + bn(examVocabCards().length) + ')</small></label>';
     h += '<label><input type="checkbox" id="pPhr"' + (p.phr ? ' checked' : '') + '> শব্দতালিকার সাথে বাক্য ও উদাহরণও রাখুন <small>(ব্যাকরণ ও সংলাপ অধ্যায়ের উদাহরণ)</small></label>';
     h += '<label>দিনে নতুন শব্দ: <select id="pNew">' + [10, 20, 30, 50, 100].map(function (v) { return '<option' + (v === p.newPerDay ? ' selected' : '') + ' value="' + v + '">' + bn(v) + '</option>'; }).join('') + '</select></label></details></div>';
     app.innerHTML = h; app.setAttribute('data-view', 'practice');
@@ -614,6 +656,7 @@
     var rebuild = function () { save(); var pool = buildPool(chs); startSession(pool, false); PS.key = poolKey(pool); drawPractice(chs); };
     $$('input[data-ch]', app).forEach(function (i) { i.onchange = function () { if (i.checked) delete p.ex[i.getAttribute('data-ch')]; else p.ex[i.getAttribute('data-ch')] = true; rebuild(); $('details.psrcs').open = true; }; });
     if ($('#pSt')) $('#pSt').onchange = function () { p.st = this.checked; rebuild(); $('details.psrcs').open = true; };
+    if ($('#pExam')) $('#pExam').onchange = function () { p.exam = this.checked; rebuild(); $('details.psrcs').open = true; };
     if ($('#pPhr')) $('#pPhr').onchange = function () { p.phr = this.checked; rebuild(); $('details.psrcs').open = true; };
     if ($('#pNew')) $('#pNew').onchange = function () { p.newPerDay = +this.value; rebuild(); $('details.psrcs').open = true; };
     if ($('#pShow')) $('#pShow').onclick = revealCard;
@@ -639,7 +682,8 @@
   });
   function practiceTile() {
     return '<a class="praclink" href="#/practice"><b>🃏 শব্দ অনুশীলন</b><small>Wörter üben · শেষ করা অধ্যায়ের শব্দ ফ্ল্যাশকার্ডে, সহজ/কঠিন চিহ্ন দিয়ে</small></a>' +
-      '<a class="praclink listenlink" href="#/listen"><b>🎧 শুনে বোঝো</b><small>Hören · A1 বাক্য শুনে অর্থ বোঝার অনুশীলন</small></a>';
+      '<a class="praclink listenlink" href="#/listen"><b>🎧 শুনে বোঝো</b><small>Hören · A1 বাক্য শুনে অর্থ বোঝার অনুশীলন</small></a>' +
+      '<a class="praclink examlink" href="#/exam"><b>📻 পরীক্ষার শোনা</b><small>Prüfung Hören · Goethe / ÖSD A1 অডিও পরিস্থিতি</small></a>';
   }
 
   /* ---------- listening practice (Hören) — A1 only for now; LISTEN_LEVELS ready for a2/b1 later ---------- */
@@ -758,8 +802,9 @@
   function listenPlay(rate) {
     if (!LS || LS.i >= LS.q.length) return;
     var c = LS.q[LS.i], el = $('#lSay');
-    if (el) play(el, rate == null ? 1 : rate);
-    else playText(c.id, c.t, rate == null ? 1 : rate);
+    // omit rate → global S.rate; slow button passes 0.7 absolute
+    if (el) play(el, rate);
+    else playText(c.id, c.t, rate);
   }
   function renderListen() {
     view = null; $('#readbar').style.width = '0';
@@ -837,7 +882,7 @@
       LS = { pool: LS.pool, q: shuffle(LS.pool.slice()).slice(0, 20), i: 0, shown: false, guess: '', n: 0, ok: 0, hard: 0, key: LS.key, chs: chs };
       drawListen(chs);
     };
-    if ($('#lReplay')) $('#lReplay').onclick = function () { listenPlay(1); };
+    if ($('#lReplay')) $('#lReplay').onclick = function () { listenPlay(); };
     if ($('#lSlow')) $('#lSlow').onclick = function () { listenPlay(0.7); };
     if ($('#lGuess')) $('#lGuess').oninput = function () { LS.guess = this.value; };
     if ($('#lReveal')) $('#lReveal').onclick = function () {
@@ -855,7 +900,7 @@
     // auto-play when a fresh (hidden) card is shown
     if (LS && LS.i < LS.q.length && !LS.shown && !LS._played) {
       LS._played = true;
-      setTimeout(function () { if (location.hash === '#/listen') listenPlay(1); }, 280);
+      setTimeout(function () { if (location.hash === '#/listen') listenPlay(); }, 280);
     }
   }
   function listenAnswer(ok) {
@@ -871,15 +916,264 @@
     if ((e.key === ' ' || e.key === 'Enter') && !LS.shown) { e.preventDefault(); if ($('#lReveal')) $('#lReveal').click(); }
     else if (LS.shown && (e.key === '1' || e.key === 'ArrowLeft')) listenAnswer(false);
     else if (LS.shown && (e.key === '2' || e.key === 'ArrowRight')) listenAnswer(true);
-    else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); listenPlay(1); };
+    else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); listenPlay(); };
   });
+
+  /* ---------- exam listening (Prüfung Hören · Goethe/ÖSD A1) ---------- */
+  var ES = null; // exam session
+  function Ex() {
+    S.exam = Object.assign({ topic: '', srs: {}, nd: { day: '', n: 0 }, drill: false }, S.exam || {});
+    return S.exam;
+  }
+  function examData() { return window.EXAM_A1 || { topics: [] }; }
+  function examTopics() { return examData().topics || []; }
+  function examTopic(id) { return examTopics().filter(function (t) { return t.id === id; })[0] || null; }
+  function examAllTexts(topicId) {
+    var out = [];
+    examTopics().forEach(function (tp) {
+      if (topicId && tp.id !== topicId) return;
+      (tp.texts || []).forEach(function (tx) {
+        out.push(Object.assign({}, tx, { topicId: tp.id, topicTitle: tp.title, topicDe: tp.titleDe, src: '📻 ' + (tp.titleDe || tp.title) }));
+      });
+    });
+    return out;
+  }
+  function examGrade(card, ok) {
+    var p = Ex(), r = p.srs[card.id], now = Date.now();
+    if (!r) { if (p.nd.day !== today()) p.nd = { day: today(), n: 0 }; p.nd.n++; }
+    if (ok) {
+      var n = (r && r.last === 'e') ? Math.min((r.n || 0) + 1, STEPS.length - 1) : 0;
+      p.srs[card.id] = { n: n, due: now + STEPS[n] * DAY, last: 'e', h: r ? r.h || 0 : 0, at: now };
+    } else {
+      p.srs[card.id] = { n: -1, due: now + 10 * 60 * 1000, last: 'h', h: (r ? r.h || 0 : 0) + 1, at: now };
+    }
+    save();
+  }
+  function examStats(pool) {
+    var s = Ex().srs, e = endOfDay(), st = { due: 0, ok: 0, hard: 0, fresh: 0 };
+    pool.forEach(function (c) {
+      var r = s[c.id]; if (!r) { st.fresh++; return; }
+      if (r.due <= e) st.due++;
+      if (r.last === 'e') st.ok++; else st.hard++;
+    });
+    return st;
+  }
+  function startExamSession(pool) {
+    var now = Date.now(), due = [], fresh = [];
+    pool.forEach(function (c) {
+      var r = Ex().srs[c.id];
+      if (!r) fresh.push(c); else if (r.due <= now) due.push(c);
+    });
+    shuffle(due); fresh = shuffle(fresh).slice(0, Math.max(0, 12 - due.length));
+    var q = due.concat(fresh);
+    if (!q.length && pool.length) q = shuffle(pool.slice()).slice(0, 12);
+    ES = { pool: pool, q: q, i: 0, step: 'play', answered: false, correct: null, shown: false, n: 0, ok: 0, hard: 0, key: poolKey(pool), drill: null };
+  }
+  function highlightKeys(de, keys) {
+    var html = esc(de);
+    (keys || []).slice().sort(function (a, b) { return b.length - a.length; }).forEach(function (k) {
+      if (!k) return;
+      var re = new RegExp('(' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      html = html.replace(re, '<mark class="ekey">$1</mark>');
+    });
+    return html;
+  }
+  function examPlay(rate) {
+    if (!ES || ES.i >= ES.q.length) return;
+    var c = ES.q[ES.i];
+    playText('', c.de, rate); // omit rate → global S.rate
+  }
+  function stopExamDrill() {
+    if (ES && ES.drill && ES.drill.t) clearTimeout(ES.drill.t);
+    if (ES) ES.drill = null;
+  }
+  function runExamDrill() {
+    if (!ES || ES.i >= ES.q.length) return;
+    stopExamDrill();
+    // 5 plays: blind, blind, with transcript, blind, blind
+    var plan = [0, 0, 1, 0, 0], n = 0;
+    ES.drill = { on: true, show: false };
+    drawExam();
+    function next() {
+      if (!ES || !ES.drill || location.hash.indexOf('exam') < 0) return;
+      if (n >= plan.length) { ES.drill = null; toast('৫বার শোনা শেষ'); drawExam(); return; }
+      ES.drill.show = !!plan[n];
+      ES.drill.n = n + 1;
+      drawExam();
+      examPlay();
+      n++;
+      // wait ~ audio length estimate then pause, then next (scale with global rate)
+      var words = (ES.q[ES.i].de || '').split(/\s+/).length;
+      var wait = Math.max(2800, (words * 420 + 1000) / (S.rate || 1));
+      ES.drill.t = setTimeout(next, wait);
+    }
+    next();
+  }
+  function renderExam() {
+    view = null; $('#readbar').style.width = '0';
+    var st = Ex();
+    var parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+    // #/exam | #/exam/<topic> | #/exam/<topic>/practice
+    if (parts[1] && examTopic(parts[1])) {
+      st.topic = parts[1]; save();
+      if (parts[2] === 'practice' || parts[2] === 'drill') {
+        var pool = examAllTexts(st.topic);
+        if (!ES || ES.key !== poolKey(pool) || ES.topic !== st.topic) {
+          startExamSession(pool); ES.topic = st.topic;
+        }
+        if (parts[2] === 'drill' && (!ES.drill || !ES.drill.on)) {
+          // start drill for current card after draw
+          drawExam(); scrollTo(0, 0);
+          setTimeout(runExamDrill, 200);
+          return;
+        }
+        drawExam(); scrollTo(0, 0); return;
+      }
+      drawExamTopic(examTopic(st.topic)); scrollTo(0, 0); return;
+    }
+    drawExamHome(); scrollTo(0, 0);
+  }
+  function drawExamHome() {
+    stopExamDrill();
+    var data = examData(), topics = examTopics(), all = examAllTexts(), st = examStats(all);
+    var h = '<div class="page exam"><h1 class="chapter"><span class="num">📻 ' + bn(all.length) + 'টি অডিও</span>পরীক্ষার শোনা<span class="de">Prüfung Hören</span></h1>';
+    h += '<p class="small">' + esc(data.intro || '') + '</p>';
+    h += '<div class="pstats"><div><b>' + bn(st.due) + '</b><small>আজ বাকি</small></div><div><b>' + bn(st.ok) + '</b><small>বুঝেছি</small></div><div><b>' + bn(st.hard) + '</b><small>কঠিন</small></div><div><b>' + bn(st.fresh) + '</b><small>নতুন</small></div></div>';
+    h += '<div class="sec-title">বিষয় · Themen</div><ul class="chlist examtopics">';
+    topics.forEach(function (tp, i) {
+      var n = (tp.texts || []).length, done = (tp.texts || []).filter(function (t) { return Ex().srs[t.id] && Ex().srs[t.id].last === 'e'; }).length;
+      h += '<li><a href="#/exam/' + tp.id + '"><span class="no">' + bn(i + 1) + '</span><span class="tt"><b>' + esc(tp.title) + '</b><i>' + esc(tp.titleDe) + '</i></span><span class="st">' + bn(done) + '/' + bn(n) + '</span></a></li>';
+    });
+    h += '</ul>';
+    h += '<p class="small">প্রতিটি বিষয়ে আগে শব্দ শিখুন, তারপর পরীক্ষার মতো প্রশ্নসহ অডিও অনুশীলন করুন।</p></div>';
+    app.innerHTML = h; app.setAttribute('data-view', 'exam');
+  }
+  function drawExamTopic(tp) {
+    stopExamDrill();
+    if (!tp) return drawExamHome();
+    var h = '<div class="page exam"><p class="small"><a href="#/exam">← সব বিষয়</a></p>';
+    h += '<h1 class="chapter"><span class="num">📻 ' + esc(tp.titleDe) + '</span>' + esc(tp.title) + '<span class="de">' + bn((tp.texts || []).length) + 'টি টেক্সট</span></h1>';
+    h += '<p class="small">' + esc(tp.blurb || '') + '</p>';
+    h += '<h2 class="esec">১. আগে শব্দ শিখুন</h2><p class="small">শব্দে চাপ দিলে উচ্চারণ শুনবেন।</p>';
+    h += '<table class="voc examvoc"><thead><tr><th>Deutsch</th><th>বাংলা</th></tr></thead><tbody>';
+    (tp.vocab || []).forEach(function (w) {
+      var cls = { der: 'm', die: 'f', das: 'n' }[w.art] || '';
+      h += '<tr><td class="de say" data-a="" data-t="' + esc(w.de) + '">' + (cls ? '<span class="' + cls + '">' + esc(w.de) + '</span>' : esc(w.de)) + '</td><td class="bn">' + esc(w.bn) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    h += '<div class="examactions"><a class="pbtn" href="#/exam/' + tp.id + '/practice">২. অডিও অনুশীলন শুরু →</a>';
+    h += '<a class="pbtn alt" href="#/exam/' + tp.id + '/drill">৫বার শোনার মোড</a></div></div>';
+    app.innerHTML = h; app.setAttribute('data-view', 'exam-topic');
+  }
+  function drawExam() {
+    var st = Ex(), tp = examTopic(st.topic);
+    if (!ES || !tp) return drawExamTopic(tp);
+    var pool = ES.pool, stats = examStats(pool);
+    var h = '<div class="page exam"><p class="small"><a href="#/exam/' + tp.id + '">← ' + esc(tp.title) + '</a> · <a href="#/exam">সব বিষয়</a></p>';
+    h += '<h1 class="chapter"><span class="num">📻 ' + esc(tp.titleDe) + '</span>অনুশীলন<span class="de">Hören üben</span></h1>';
+    h += '<div class="pstats"><div><b>' + bn(stats.due) + '</b><small>আজ বাকি</small></div><div><b>' + bn(stats.ok) + '</b><small>বুঝেছি</small></div><div><b>' + bn(stats.hard) + '</b><small>কঠিন</small></div><div><b>' + bn(stats.fresh) + '</b><small>নতুন</small></div></div>';
+
+    if (!pool.length) {
+      h += '<div class="pempty"><p><b>এই বিষয়ে টেক্সট নেই।</b></p></div></div>';
+      app.innerHTML = h; return;
+    }
+    if (ES.i >= ES.q.length) {
+      h += '<div class="pempty"><p class="big">🎉</p><p><b>' + (ES.n ? 'এই সেশন শেষ! ' + bn(ES.n) + 'টি (বুঝেছি ' + bn(ES.ok) + ' · বুঝিনি ' + bn(ES.hard) + ')' : 'আজকের অডিও শেষ!') + '</b></p>';
+      h += '<button class="pbtn" id="eAgain" type="button">আবার শুরু</button>';
+      h += '<a class="pbtn alt" href="#/exam/' + tp.id + '">শব্দতালিকায় ফিরুন</a></div></div>';
+      app.innerHTML = h; app.setAttribute('data-view', 'exam-practice');
+      if ($('#eAgain')) $('#eAgain').onclick = function () { startExamSession(ES.pool); ES.topic = st.topic; drawExam(); };
+      return;
+    }
+
+    var c = ES.q[ES.i], q = c.q || {};
+    var drilling = ES.drill && ES.drill.on;
+    h += '<div class="psess">অডিও ' + bn(ES.i + 1) + '/' + bn(ES.q.length) + (drilling ? ' · ৫বার · ' + bn(ES.drill.n || 1) + '/৫' : '') + ' · এই সেশনে ' + bn(ES.n) + '</div>';
+    h += '<div class="fcard ecard' + (ES.shown || (drilling && ES.drill.show) ? ' shown' : '') + '" id="ecard">';
+    h += '<div class="psrc">' + esc(c.src) + (Ex().srs[c.id] ? '' : ' · <i>নতুন</i>') + '</div>';
+
+    if (ES.shown || (drilling && ES.drill.show)) {
+      h += '<div class="pfront"><div class="pde etrans">' + highlightKeys(c.de, c.keys) + '</div></div>';
+      h += '<div class="pback"><div class="pbn">' + esc(c.bn) + '</div></div>';
+    } else {
+      h += '<div class="pfront lhidden"><div class="lear">📻</div><p class="lhint">পরীক্ষার মতো শুনুন — লেখা লুকানো</p></div>';
+    }
+    h += '</div>';
+
+    h += '<div class="lplay"><button type="button" class="pbtn alt" id="eReplay">↻ আবার</button>';
+    h += '<button type="button" class="pbtn alt" id="eSlow">🐌 ধীরে (~০.৭×)</button></div>';
+    if (!drilling) h += '<button type="button" class="pbtn alt" id="eDrill5">৫বার শুনুন (লুকানো → দেখা → লুকানো)</button>';
+    else h += '<button type="button" class="pbtn alt" id="eDrillStop">৫বার মোড বন্ধ</button>';
+
+    if (!ES.shown && !drilling) {
+      h += '<div class="eask"><p class="eq">' + esc(q.ask || 'কী বলা হয়েছে?') + '</p>';
+      if (q.type === 'tf') {
+        h += '<div class="pgrade"><button type="button" class="hard" id="eNo" data-a="0">Falsch<small>ভুল</small></button>';
+        h += '<button type="button" class="easy" id="eYes" data-a="1">Richtig<small>ঠিক</small></button></div>';
+      } else {
+        h += '<div class="echoices">';
+        (q.choices || []).forEach(function (ch, i) {
+          h += '<button type="button" class="pbtn alt echoice" data-a="' + i + '">' + esc(ch) + '</button>';
+        });
+        h += '</div>';
+      }
+      h += '</div>';
+    } else if (ES.answered && !ES.shown && !drilling) {
+      h += '<p class="small center">' + (ES.correct ? 'ঠিক! ✓' : 'ভুল ✗ — এখন ট্রান্সক্রিপ্ট দেখুন') + '</p>';
+      h += '<button type="button" class="pbtn" id="eReveal">ট্রান্সক্রিপ্ট দেখো</button>';
+    } else if (ES.shown && !drilling) {
+      h += '<p class="small center">' + (ES.correct ? 'উত্তর ঠিক ছিল ✓' : 'উত্তর ভুল ছিল — কীওয়ার্ডগুলো লক্ষ্য করুন') + '</p>';
+      h += '<div class="pgrade"><button type="button" class="hard" id="eHard">বুঝিনি<small>পরে আবার</small></button>';
+      h += '<button type="button" class="easy" id="eEasy">বুঝেছি<small>পরেরটি</small></button></div>';
+    }
+
+    h += '</div>';
+    app.innerHTML = h; app.setAttribute('data-view', 'exam-practice');
+    wireExam();
+  }
+  function wireExam() {
+    if ($('#eReplay')) $('#eReplay').onclick = function () { examPlay(); };
+    if ($('#eSlow')) $('#eSlow').onclick = function () { examPlay(0.7); };
+    if ($('#eDrill5')) $('#eDrill5').onclick = function () { runExamDrill(); };
+    if ($('#eDrillStop')) $('#eDrillStop').onclick = function () { stopExamDrill(); drawExam(); };
+    $$('.echoice, #eYes, #eNo', app).forEach(function (b) {
+      b.onclick = function () {
+        if (!ES || ES.answered) return;
+        var c = ES.q[ES.i], q = c.q || {}, a = b.getAttribute('data-a');
+        var ok = q.type === 'tf' ? ((a === '1') === !!q.ok) : (+a === q.ok);
+        ES.answered = true; ES.correct = ok;
+        b.classList.add(ok ? 'ok' : 'bad');
+        if (q.type === 'mc') $$('.echoice', app).forEach(function (x) { if (+x.getAttribute('data-a') === q.ok) x.classList.add('ok'); });
+        toast(ok ? 'ঠিক! Richtig ✓' : 'ভুল — ট্রান্সক্রিপ্ট দেখুন');
+        setTimeout(function () { ES.shown = true; drawExam(); }, 450);
+      };
+    });
+    if ($('#eReveal')) $('#eReveal').onclick = function () { ES.shown = true; drawExam(); };
+    if ($('#eEasy')) $('#eEasy').onclick = function () { examAnswer(true); };
+    if ($('#eHard')) $('#eHard').onclick = function () { examAnswer(false); };
+    if (ES && ES.i < ES.q.length && ES.step === 'play' && !ES._played && !(ES.drill && ES.drill.on)) {
+      ES._played = true; ES.step = 'ask';
+      setTimeout(function () { if (location.hash.indexOf('exam') >= 0) examPlay(); }, 280);
+    }
+  }
+  function examAnswer(ok) {
+    if (!ES || !ES.shown || ES.i >= ES.q.length) return;
+    var c = ES.q[ES.i];
+    examGrade(c, ok);
+    ES.n++; if (ok) ES.ok++; else { ES.hard++; requeueFar(ES.q, ES.i, c); }
+    stopExamDrill();
+    advancePast(ES, c.id);
+    ES.shown = false; ES.answered = false; ES.correct = null; ES.step = 'play'; ES._played = false;
+    drawExam();
+  }
 
   /* ---------- router ---------- */
   var firstLoad = true;
   function route() {
     closeDrawer(); persistPos();
-    // stop leftover speech when leaving listen
-    if (location.hash.indexOf('listen') < 0 && window.speechSynthesis) try { speechSynthesis.cancel(); } catch (e) {}
+    // stop leftover speech when leaving listen/exam
+    if (location.hash.indexOf('listen') < 0 && location.hash.indexOf('exam') < 0 && window.speechSynthesis) try { speechSynthesis.cancel(); } catch (e) {}
+    if (location.hash.indexOf('exam') < 0) stopExamDrill();
     var hsh = location.hash.replace(/^#\/?/, ''), parts = hsh.split('/').filter(Boolean);
     if (parts[0] === 'login' || !USER) return renderLogin();
     var resume = false;
@@ -891,6 +1185,7 @@
     if (parts[0] === 'stars') return renderStars();
     if (parts[0] === 'practice') return renderPractice();
     if (parts[0] === 'listen') return renderListen();
+    if (parts[0] === 'exam') return renderExam();
     if (parts.length === 1) return renderLevel(parts[0]);
     renderChapter(parts[0], parts[1], parts[2], resume);
   }
