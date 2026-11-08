@@ -89,9 +89,91 @@
     pickVoice();
     speechSynthesis.addEventListener('voiceschanged', function () { pickVoice(); });
   }
+  // Expand digits/times/prices to German words so engines don't fall back to English number reading.
+  var DE_ONES = ['null', 'eins', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun'];
+  var DE_TEENS = ['zehn', 'elf', 'zwölf', 'dreizehn', 'vierzehn', 'fünfzehn', 'sechzehn', 'siebzehn', 'achtzehn', 'neunzehn'];
+  var DE_TENS = ['', '', 'zwanzig', 'dreißig', 'vierzig', 'fünfzig', 'sechzig', 'siebzig', 'achtzig', 'neunzig'];
+  function deUnder100(n, asEin) {
+    n = n | 0;
+    if (n < 0 || n > 99) return String(n);
+    if (n === 1) return asEin ? 'ein' : 'eins';
+    if (n < 10) return DE_ONES[n];
+    if (n < 20) return DE_TEENS[n - 10];
+    var t = (n / 10) | 0, o = n % 10;
+    if (!o) return DE_TENS[t];
+    return (o === 1 ? 'ein' : DE_ONES[o]) + 'und' + DE_TENS[t];
+  }
+  function deUnder1000(n, asEin) {
+    n = n | 0;
+    if (n < 100) return deUnder100(n, asEin);
+    var h = (n / 100) | 0, r = n % 100;
+    var hs = h === 1 ? 'einhundert' : DE_ONES[h] + 'hundert';
+    return r ? hs + deUnder100(r, false) : hs;
+  }
+  function numberToGerman(n, asEin) {
+    n = Math.round(Number(n));
+    if (!isFinite(n) || n < 0) return String(n);
+    if (n < 1000) return deUnder1000(n, asEin);
+    if (n < 1000000) {
+      var th = (n / 1000) | 0, r = n % 1000;
+      var ths = th === 1 ? 'tausend' : deUnder1000(th, true) + 'tausend';
+      return r ? ths + deUnder1000(r, false) : ths;
+    }
+    return String(n);
+  }
+  function timeToGerman(h, m) {
+    h = h | 0; m = m | 0;
+    var hs = numberToGerman(h, true) + ' Uhr';
+    if (!m) return hs;
+    return hs + ' ' + numberToGerman(m, false);
+  }
+  function germanizeForSpeech(text) {
+    var s = String(text == null ? '' : text);
+    if (!s) return s;
+    // 10:45 / 9.30 clock times (optional trailing "Uhr" absorbed — timeToGerman already adds Uhr)
+    s = s.replace(/\b(\d{1,2})[:.](\d{2})(\s*Uhr)?\b/gi, function (_, h, m) {
+      h = +h; m = +m;
+      if (h > 23 || m > 59) return h + ':' + (m < 10 ? '0' : '') + m;
+      return timeToGerman(h, m);
+    });
+    // 1,99 Euro / 1.99€ / Euro 2,50
+    s = s.replace(/(\d+)[,.](\d{1,2})\s*(?:€|Euro)\b/gi, function (_, a, b) {
+      var cents = b.length === 1 ? b + '0' : b;
+      return numberToGerman(+a, true) + ' Euro ' + numberToGerman(+cents, false);
+    });
+    s = s.replace(/(?:€|Euro)\s*(\d+)[,.](\d{1,2})\b/gi, function (_, a, b) {
+      var cents = b.length === 1 ? b + '0' : b;
+      return numberToGerman(+a, true) + ' Euro ' + numberToGerman(+cents, false);
+    });
+    // N Euro / N Uhr / N Minuten (use "ein" before noun)
+    s = s.replace(/\b(\d+)\s*(€|Euro|Uhr|Minute|Minuten|Stunde|Stunden|Tag|Tage|Woche|Wochen)\b/gi, function (_, n, w) {
+      return numberToGerman(+n, true) + ' ' + w;
+    });
+    // Remaining numbers: phones / leading-zero codes → digit-by-digit; short → full words
+    s = s.replace(/\d+/g, function (d) {
+      if (d.length >= 5 || /^0\d/.test(d)) return d.split('').map(function (c) { return numberToGerman(+c, false); }).join(' ');
+      return numberToGerman(+d, false);
+    });
+    return s.replace(/\s+/g, ' ').trim();
+  }
+  // Digit / time / price / single-letter cells often have English MP3s — force German TTS instead.
+  function preferGermanTts(text) {
+    var t = String(text || '').trim();
+    if (!t) return false;
+    if (/^[\d\s.:‚,;€$+\-–—/]+$/.test(t)) return true;
+    if (/^\d{1,4}(\s*Uhr)?$/i.test(t)) return true;
+    if (/^\d+\s*(Uhr|Euro|€|Minuten?|Stunden?|Tage?|Wochen?)\b/i.test(t)) return true;
+    if (/^\d+[,.]\d{1,2}\s*(€|Euro)?$/i.test(t)) return true;
+    if (/^[A-Za-zÄÖÜäöüß]$/.test(t)) return true;
+    return false;
+  }
+  // Debug helpers for console / tests
+  window.__germanizeForSpeech = germanizeForSpeech;
+  window.__preferGermanTts = preferGermanTts;
   function speakTTS(text, el, rate, onEnd) {
     if (!window.speechSynthesis) { done(el); if (onEnd) onEnd(); toast('এই ব্রাউজারে অডিও নেই'); return; }
     speechSynthesis.cancel();
+    var speakText = germanizeForSpeech(text);
     var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
     whenVoicesReady(function () {
       // Re-resolve from the live list every speak (stale Voice objects can break Chrome/Edge)
@@ -105,7 +187,7 @@
         })[0] || all[0] || null;
         if (live && !isGermanVoice(live)) live = null;
       }
-      var u = new SpeechSynthesisUtterance(text);
+      var u = new SpeechSynthesisUtterance(speakText);
       // ALWAYS de-DE — never inherit lang from a voice; never fall back to English voice
       u.lang = 'de-DE';
       if (live) {
@@ -115,7 +197,7 @@
       // Natural native speed by default (no artificial 0.9 slowdown)
       u.rate = rate == null ? S.rate : rate;
       u.onend = u.onerror = fin;
-      window.__lastSpoken = { lang: 'de-DE', voice: live ? live.name : null, voiceLang: live ? live.lang : null };
+      window.__lastSpoken = { lang: 'de-DE', voice: live ? live.name : null, voiceLang: live ? live.lang : null, text: speakText, raw: String(text || '') };
       speechSynthesis.speak(u);
     });
   }
@@ -129,7 +211,8 @@
     if (window.speechSynthesis) speechSynthesis.cancel();
     window.__lastPlayed = { key: key, text: text };
     var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
-    if (!key) return speakTTS(text, el, r, onEnd);
+    // No key, or numeric/time/price text → always German TTS (avoid English digit MP3s / English digit reading)
+    if (!key || preferGermanTts(text)) return speakTTS(text, el, r, onEnd);
     var fellBack = false;
     var fb = function () { if (fellBack) return; fellBack = true; window.__lastPlayed.fallback = true; speakTTS(text, el, r, onEnd); };
     player.onended = fin;
