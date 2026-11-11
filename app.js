@@ -39,12 +39,16 @@
 
   /* ---------- audio ---------- */
   var player = new Audio(); player.preload = 'auto';
-  var current = null, deVoice = null, voicesReady = false;
-  // ONLY lang starting with de — never pick by English name tokens (Google/Microsoft/Natural).
+  var current = null, deVoice = null, voicesReady = false, voiceWarnAt = 0;
+  // ONLY lang starting with de — never pick English/default voices by fancy name tokens alone.
   function isGermanVoice(v) {
     if (!v) return false;
     var lang = String(v.lang || '').toLowerCase().replace(/_/g, '-');
-    return lang === 'de' || lang.indexOf('de-') === 0;
+    if (!(lang === 'de' || lang.indexOf('de-') === 0)) return false;
+    // Reject mislabeled English voices that somehow advertise a de-* lang tag
+    var n = String(v.name || '');
+    if (/\b(english|en-us|en-gb|us english|british|american)\b/i.test(n) && !/\b(deutsch|german|germany|österreich|schweiz)\b/i.test(n)) return false;
+    return true;
   }
   function voiceScore(v) {
     // Caller must already pass a German voice; score only ranks within de-* voices.
@@ -59,17 +63,31 @@
     if (/compact|eloquence|basic|espeak/i.test(n)) s -= 6;
     return s;
   }
+  function germanVoices() {
+    if (!window.speechSynthesis) return [];
+    return (speechSynthesis.getVoices() || []).filter(isGermanVoice);
+  }
   function pickVoice() {
     if (!window.speechSynthesis) return null;
     var all = speechSynthesis.getVoices() || [];
     if (all.length) voicesReady = true;
-    var vs = all.filter(isGermanVoice);
+    var vs = germanVoices();
     vs.sort(function (a, b) { return voiceScore(b) - voiceScore(a); });
     deVoice = vs[0] || null;
     // Hard guard: never keep a non-German voice object
     if (deVoice && !isGermanVoice(deVoice)) deVoice = null;
     window.__deVoice = deVoice ? { name: deVoice.name, lang: deVoice.lang, score: voiceScore(deVoice) } : null;
     return deVoice;
+  }
+  function resolveLiveGermanVoice() {
+    pickVoice();
+    var all = germanVoices();
+    if (!all.length) return null;
+    if (!deVoice) return all[0];
+    return all.filter(function (v) {
+      return (deVoice.voiceURI && v.voiceURI === deVoice.voiceURI) ||
+        (v.name === deVoice.name && String(v.lang).toLowerCase() === String(deVoice.lang).toLowerCase());
+    })[0] || all[0] || null;
   }
   function whenVoicesReady(cb) {
     if (!window.speechSynthesis) { cb(); return; }
@@ -84,7 +102,19 @@
     speechSynthesis.addEventListener('voiceschanged', finish);
     // Chrome sometimes needs a getVoices() kick; Edge may never fire if list already cached empty briefly
     try { speechSynthesis.getVoices(); } catch (e) {}
-    setTimeout(finish, 400);
+    // Android Chrome often loads voices slowly — wait longer than desktop
+    setTimeout(finish, 1200);
+  }
+  function toastGermanVoiceMissing() {
+    var now = Date.now();
+    if (now - voiceWarnAt < 8000) return; // don't spam
+    voiceWarnAt = now;
+    var ua = navigator.userAgent || '';
+    var android = /Android/i.test(ua);
+    var msg = android
+      ? 'জার্মান ভয়েস নেই — ইংরেজিতে পড়া হবে না। Settings → Language/System → Text-to-speech → Google Text-to-speech → ⚙ → Install voice data → German ইনস্টল করুন, তারপর পেজ রিফ্রেশ দিন।'
+      : 'জার্মান ভয়েস নেই — ইংরেজিতে পড়া হবে না। Chrome/Edge-এ German voice pack ইনস্টল করুন (OS Speech settings বা chrome://settings/languages), তারপর পেজ রিফ্রেশ দিন।';
+    toast(msg, 9000);
   }
   if (window.speechSynthesis) {
     pickVoice();
@@ -171,57 +201,89 @@
   // Debug helpers for console / tests
   window.__germanizeForSpeech = germanizeForSpeech;
   window.__preferGermanTts = preferGermanTts;
+  window.__resolveLiveGermanVoice = resolveLiveGermanVoice;
+  window.__isGermanVoice = isGermanVoice;
   function speakTTS(text, el, rate, onEnd) {
     if (!window.speechSynthesis) { done(el); if (onEnd) onEnd(); toast('এই ব্রাউজারে অডিও নেই'); return; }
-    speechSynthesis.cancel();
+    try { speechSynthesis.cancel(); } catch (e) {}
     var speakText = germanizeForSpeech(text);
     var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
+    // Re-kick voice list on the user gesture (critical on Android Chrome)
+    try { speechSynthesis.getVoices(); } catch (e) {}
     whenVoicesReady(function () {
-      // Re-resolve from the live list every speak (stale Voice objects can break Chrome/Edge)
-      pickVoice();
-      var live = null;
-      if (deVoice) {
-        var all = (speechSynthesis.getVoices() || []).filter(isGermanVoice);
-        live = all.filter(function (v) {
-          return (deVoice.voiceURI && v.voiceURI === deVoice.voiceURI) ||
-            (v.name === deVoice.name && String(v.lang).toLowerCase() === String(deVoice.lang).toLowerCase());
-        })[0] || all[0] || null;
+      var attempts = 0;
+      function trySpeak() {
+        var live = resolveLiveGermanVoice();
         if (live && !isGermanVoice(live)) live = null;
+        if (!live) {
+          // Voices often arrive late on Android — retry briefly before giving up
+          if (attempts++ < 10) { setTimeout(trySpeak, 200); return; }
+          window.__lastSpoken = { lang: null, voice: null, blocked: true, text: speakText, raw: String(text || '') };
+          toastGermanVoiceMissing();
+          fin();
+          return;
+        }
+        var u = new SpeechSynthesisUtterance(speakText);
+        // ALWAYS pin de-DE + an actual German voice — never speak with default/English voice
+        u.lang = 'de-DE';
+        try { u.voice = live; } catch (e) { live = null; }
+        if (!live || !isGermanVoice(u.voice || live)) {
+          window.__lastSpoken = { lang: null, voice: null, blocked: true, text: speakText, raw: String(text || '') };
+          toastGermanVoiceMissing();
+          fin();
+          return;
+        }
+        u.lang = 'de-DE'; // re-assert after assigning voice (some engines overwrite lang)
+        u.rate = rate == null ? S.rate : rate;
+        u.pitch = 1;
+        u.onend = fin;
+        u.onerror = function () { fin(); };
+        window.__lastSpoken = { lang: 'de-DE', voice: live.name, voiceLang: live.lang, text: speakText, raw: String(text || '') };
+        // Chrome drops utterances if speak() runs immediately after cancel()
+        setTimeout(function () {
+          if (!isGermanVoice(live)) { toastGermanVoiceMissing(); fin(); return; }
+          try {
+            speechSynthesis.speak(u);
+            if (speechSynthesis.paused) speechSynthesis.resume();
+          } catch (err) { fin(); }
+        }, 50);
       }
-      var u = new SpeechSynthesisUtterance(speakText);
-      // ALWAYS de-DE — never inherit lang from a voice; never fall back to English voice
-      u.lang = 'de-DE';
-      if (live) {
-        try { u.voice = live; u.lang = 'de-DE'; }
-        catch (e) { /* leave unset; lang stays de-DE */ live = null; }
-      }
-      // Natural native speed by default (no artificial 0.9 slowdown)
-      u.rate = rate == null ? S.rate : rate;
-      u.onend = u.onerror = fin;
-      window.__lastSpoken = { lang: 'de-DE', voice: live ? live.name : null, voiceLang: live ? live.lang : null, text: speakText, raw: String(text || '') };
-      speechSynthesis.speak(u);
+      trySpeak();
     });
   }
   function done(el) { if (el) el.classList.remove('playing'); }
+  function playMp3(key, rate, onEnd, el) {
+    var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
+    var fb = function () { window.__lastPlayed && (window.__lastPlayed.mp3Error = true); fin(); };
+    player.onended = fin;
+    player.onerror = fb;
+    player.src = 'audio/' + key + '.mp3';
+    player.playbackRate = rate == null ? 1 : rate;
+    var p = player.play();
+    if (p && p.catch) p.catch(function (err) { if (err && err.name === 'NotAllowedError') fin(); else fb(); });
+  }
   function play(el, rate, onEnd) {
     var key = el.getAttribute('data-a'), text = el.getAttribute('data-t') || el.textContent;
     var r = rate == null ? S.rate : rate;
     if (current) current.classList.remove('playing');
     current = el; if (el) el.classList.add('playing');
     try { player.pause(); } catch (e) {}
-    if (window.speechSynthesis) speechSynthesis.cancel();
+    if (window.speechSynthesis) try { speechSynthesis.cancel(); } catch (e) {}
     window.__lastPlayed = { key: key, text: text };
-    var once = false, fin = function () { if (once) return; once = true; done(el); if (onEnd) onEnd(); };
-    // No key, or numeric/time/price text → always German TTS (avoid English digit MP3s / English digit reading)
-    if (!key || preferGermanTts(text)) return speakTTS(text, el, r, onEnd);
-    var fellBack = false;
-    var fb = function () { if (fellBack) return; fellBack = true; window.__lastPlayed.fallback = true; speakTTS(text, el, r, onEnd); };
-    player.onended = fin;
-    player.onerror = fb;
-    player.src = 'audio/' + key + '.mp3';
-    player.playbackRate = r;
-    var p = player.play();
-    if (p && p.catch) p.catch(function (err) { if (err && err.name === 'NotAllowedError') { fin(); } else fb(); });
+    // Always try German TTS first (waits for voices). Never fall back to English TTS.
+    // If no German voice: show Bangla install help; then optionally play a recorded MP3.
+    if (window.speechSynthesis) {
+      return speakTTS(text, el, r, function () {
+        var blocked = window.__lastSpoken && window.__lastSpoken.blocked;
+        if (blocked && key && !preferGermanTts(text)) {
+          if (el) el.classList.add('playing');
+          window.__lastPlayed.fallback = 'mp3';
+          playMp3(key, r, onEnd, el);
+        } else if (onEnd) onEnd();
+      });
+    }
+    if (key && !preferGermanTts(text)) return playMp3(key, r, onEnd, el);
+    toastGermanVoiceMissing(); done(el); if (onEnd) onEnd();
   }
   function playText(key, text, rate, onEnd, el) {
     var ghost = el || document.createElement('button');
