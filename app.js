@@ -1,4 +1,5 @@
-/* Deutsch kompakt — tiny static SPA. Routes: #/ (home), #/<level>, #/<level>/<chapter>[/<section>], #/stars, #/practice, #/listen, #/exam */
+/* Deutsch kompakt — tiny static SPA. Routes: #/ (home), #/<level>, #/<level>/<chapter>[/<section>], #/stars, #/practice, #/listen, #/exam
+   Levels include a1/a2/b1 and nicos (Nicos Weg A1 lessons → same practice/listen SRS). */
 (function () {
   'use strict';
   var KEY = 'dk.v1';
@@ -295,7 +296,11 @@
     for (var i = 0; i < hs.length; i++) { if (hs[i].getBoundingClientRect().top < 120) id = hs[i].id; else break; }
     return id;
   }
-  function setDoneBtn(b, on) { b.classList.toggle('on', on); b.textContent = on ? '✓ অধ্যায় শেষ (চাপলে চিহ্ন উঠবে)' : 'অধ্যায় শেষ ✓ চিহ্ন দিন'; }
+  function setDoneBtn(b, on, lv) {
+    b.classList.toggle('on', on);
+    var noun = lv === 'nicos' ? 'লেসন' : 'অধ্যায়';
+    b.textContent = on ? ('✓ ' + noun + ' শেষ (চাপলে চিহ্ন উঠবে)') : (noun + ' শেষ ✓ চিহ্ন দিন');
+  }
 
   /* ---------- drawer ---------- */
   function openDrawer() {
@@ -376,10 +381,24 @@
     });
   }
   function chapterList(L, lv, p) {
-    var h = '<div class="sec-title">' + lv.toUpperCase() + ' অধ্যায়সমূহ</div><div class="small">অগ্রগতি: ' + bn(p.n) + '/' + bn(p.total) + ' অধ্যায় শেষ</div><div class="progress"><i style="width:' + (100 * p.n / p.total) + '%"></i></div><ul class="chlist">';
+    var isNicos = lv === 'nicos';
+    var label = isNicos ? 'Nicos Weg A1 লেসনসমূহ' : (lv.toUpperCase() + ' অধ্যায়সমূহ');
+    var unitLabel = isNicos ? 'লেসন' : 'অধ্যায়';
+    var h = '<div class="sec-title">' + label + '</div><div class="small">অগ্রগতি: ' + bn(p.n) + '/' + bn(p.total) + ' ' + unitLabel + ' শেষ</div><div class="progress"><i style="width:' + (100 * p.n / p.total) + '%"></i></div>';
+    if (isNicos) {
+      h += '<p class="small nicos-hint">প্রতিটি লেসনের শব্দ ফ্ল্যাশকার্ড ও শুনে বোঝোতে আসে। শেষ করা লেসনগুলোর সব শব্দ একসাথে রিভিউ করতে <a href="#/practice">শব্দ অনুশীলন</a> বা <a href="#/listen">শুনে বোঝো</a> খুলুন।</p>';
+    }
+    h += '<ul class="chlist' + (isNicos ? ' nicos' : '') + '">';
+    var lastUnit = null;
     L.chapters.forEach(function (c, i) {
+      if (isNicos && c.unit != null && c.unit !== lastUnit) {
+        lastUnit = c.unit;
+        var uTitle = c.unit === 0 ? 'স্বাগতম · Willkommen' : (c.unit === 19 ? 'চূড়ান্ত পরীক্ষা · Abschlusstest' : ('ইউনিট ' + bn(c.unit) + ' · ' + esc(c.unitDe || '') + (c.unitBn ? ' · ' + esc(c.unitBn) : '')));
+        h += '<li class="unit-head" aria-hidden="false"><span class="unit-lbl">' + uTitle + '</span></li>';
+      }
       var k = chKey(lv, c.id), d = S.done[k], started = S.scroll[k] > 0;
-      h += '<li class="' + (d ? 'done' : '') + '"><a href="#/' + lv + '/' + c.id + '"><span class="no" data-toggle="' + k + '" title="চিহ্ন বদলান">' + (d ? '✓' : bn(i + 1)) + '</span><span class="tt"><b>' + esc(c.title) + '</b><i>' + esc(c.de) + '</i></span><span class="st">' + (d ? 'শেষ' : started ? 'চলছে' : '') + '</span></a></li>';
+      var noLbl = isNicos && c.folge ? bn(c.folge) : bn(i + 1);
+      h += '<li class="' + (d ? 'done' : '') + '"><a href="#/' + lv + '/' + c.id + '"><span class="no" data-toggle="' + k + '" title="চিহ্ন বদলান">' + (d ? '✓' : noLbl) + '</span><span class="tt"><b>' + esc(c.title) + '</b><i>' + esc(isNicos ? (c.num + (c.de ? ' · ' + c.de : '')) : c.de) + '</i></span><span class="st">' + (d ? 'শেষ' : started ? 'চলছে' : '') + '</span></a></li>';
     });
     return h + '</ul><p class="small">✓ ভুল করে লেগে গেলে সবুজ গোল ✓-তে চাপ দিন — চিহ্ন উঠে যাবে। <a href="#" data-reset="' + lv + '">সব ✓ মুছুন</a></p>';
   }
@@ -406,8 +425,8 @@
         (next ? '<a href="#/' + lv + '/' + next.id + '">' + esc(next.title) + ' →</a>' : '<a href="#/">হোম →</a>') + '</div></div></article>';
       $$('#chap table').forEach(function (t) { if (t.classList.contains('grid')) { var w = document.createElement('div'); w.className = 'tw'; t.parentNode.insertBefore(w, t); w.appendChild(t); } });
       addStars(app); app.setAttribute('data-view', lv + '/' + cid);
-      var b = $('.donebtn'); var k = chKey(lv, cid); setDoneBtn(b, !!S.done[k]);
-      b.onclick = function () { if (S.done[k]) delete S.done[k]; else S.done[k] = true; save(); setDoneBtn(b, !!S.done[k]); toast(S.done[k] ? 'দারুণ! ✓ (আবার চাপলে চিহ্ন উঠে যাবে)' : 'চিহ্ন সরানো হলো'); };
+      var b = $('.donebtn'); var k = chKey(lv, cid); setDoneBtn(b, !!S.done[k], lv);
+      b.onclick = function () { if (S.done[k]) delete S.done[k]; else S.done[k] = true; save(); setDoneBtn(b, !!S.done[k], lv); toast(S.done[k] ? 'দারুণ! ✓ (আবার চাপলে চিহ্ন উঠে যাবে)' : 'চিহ্ন সরানো হলো'); };
       requestAnimationFrame(function () {
         if (sec && document.getElementById(sec)) document.getElementById(sec).scrollIntoView();
         else if (resume && S.scroll[k]) { scrollTo(0, S.scroll[k]); toast('আগের জায়গা থেকে শুরু হলো ↩'); }
@@ -740,8 +759,8 @@
     h += '<div class="seg" role="group"><button type="button" data-dir="de" class="' + (p.dir === 'de' ? 'on' : '') + '">জার্মান → বাংলা<small>Deutsch zeigen</small></button><button type="button" data-dir="bn" class="' + (p.dir === 'bn' ? 'on' : '') + '">বাংলা → জার্মান<small>Bangla zeigen</small></button></div>';
     if (!pool.length) {
       if (chs.length) h += '<div class="pempty"><p><b>বাছাই করা অধ্যায়ে অনুশীলনের শব্দ নেই।</b></p><p>উচ্চারণ, ব্যাকরণ বা সংলাপের অধ্যায়ে শব্দতালিকা থাকে না। নিচের তালিকায় "বাক্য ও উদাহরণও রাখুন" চালু করুন, অথবা শব্দভান্ডারের অধ্যায় (যেমন A1 অধ্যায় ৫) শেষ করুন। কোনো অধ্যায়ে টিক না থাকলে সেটাও দিন।</p></div>'; else
-      h += '<div class="pempty"><p><b>এখনো অনুশীলনের শব্দ নেই।</b></p><p>যে অধ্যায় পড়া শেষ, সেটার নিচে <b>"অধ্যায় শেষ ✓"</b> বোতাম চাপুন। সেই অধ্যায়ের শব্দগুলো এখানে চলে আসবে।</p><p>অথবা শব্দভান্ডারের যেকোনো শব্দের ☆ চাপুন; "আমার শব্দ"-ও এখানে অনুশীলন করা যায়।</p>' +
-        '<a class="continue" href="#/' + ((S.last && S.last.level) || 'a1') + '">অধ্যায় তালিকায় যান →</a></div>';
+      h += '<div class="pempty"><p><b>এখনো অনুশীলনের শব্দ নেই।</b></p><p>যে অধ্যায়/লেসন পড়া শেষ, সেটার নিচে <b>"অধ্যায় শেষ ✓"</b> বোতাম চাপুন। সেই অংশের শব্দগুলো এখানে চলে আসবে।</p><p>Nicos Weg-এর জন্য <a href="#/nicos">Nicos</a> খুলে লেসন শেষ চিহ্ন দিন — শেষ করা লেসনের সব শব্দ একসাথে এখানে আসবে।</p><p>অথবা শব্দভান্ডারের যেকোনো শব্দের ☆ চাপুন; "আমার শব্দ"-ও এখানে অনুশীলন করা যায়।</p>' +
+        '<a class="continue" href="#/' + ((S.last && S.last.level) || 'nicos') + '">লেসন তালিকায় যান →</a></div>';
     } else if (PS.i >= PS.q.length) {
       var dueNow = pool.filter(function (c) { return isDue(c.id, Date.now()); }).length;
       h += '<div class="pempty"><p class="big">🎉</p><p><b>' + (PS.n ? 'এই সেশন শেষ! ' + bn(PS.n) + 'টি কার্ড (সহজ ' + bn(PS.easy) + ' · কঠিন ' + bn(PS.hard) + ')' : 'আজকের সব শব্দ অনুশীলন হয়ে গেছে!') + '</b></p>' +
@@ -814,13 +833,14 @@
     else if (PS.shown && (e.key === '2' || e.key === 'ArrowRight')) answer(true);
   });
   function practiceTile() {
-    return '<a class="praclink" href="#/practice"><b>🃏 শব্দ অনুশীলন</b><small>Wörter üben · শেষ করা অধ্যায়ের শব্দ ফ্ল্যাশকার্ডে, সহজ/কঠিন চিহ্ন দিয়ে</small></a>' +
-      '<a class="praclink listenlink" href="#/listen"><b>🎧 শুনে বোঝো</b><small>Hören · A1 বাক্য শুনে অর্থ বোঝার অনুশীলন</small></a>' +
+    return '<a class="praclink" href="#/practice"><b>🃏 শব্দ অনুশীলন</b><small>Wörter üben · শেষ করা অধ্যায়/লেসনের শব্দ ফ্ল্যাশকার্ডে, সহজ/কঠিন চিহ্ন দিয়ে</small></a>' +
+      '<a class="praclink listenlink" href="#/listen"><b>🎧 শুনে বোঝো</b><small>Hören · A1 ও Nicos Weg বাক্য শুনে অর্থ বোঝার অনুশীলন</small></a>' +
       '<a class="praclink examlink" href="#/exam"><b>📻 পরীক্ষার শোনা</b><small>Prüfung Hören · Goethe / ÖSD A1 অডিও পরিস্থিতি</small></a>';
   }
 
-  /* ---------- listening practice (Hören) — A1 only for now; LISTEN_LEVELS ready for a2/b1 later ---------- */
-  var LISTEN_LEVELS = ['a1']; // extend with 'a2','b1' when those sentence pools are enabled
+  /* ---------- listening practice (Hören) — A1 + Nicos Weg; LISTEN_LEVELS ready for a2/b1 later ---------- */
+  var LISTEN_LEVELS = ['a1', 'nicos']; // extend with 'a2','b1' when those sentence pools are enabled
+  var LISTEN_LEVEL_LABEL = { a1: 'A1 kompakt', nicos: 'Nicos Weg A1' };
   var LS = null; // listening session
   function Lst() {
     S.listen = Object.assign({ lv: 'a1', ch: 'done', srs: {}, nd: { day: '', n: 0 } }, S.listen || {});
@@ -952,21 +972,27 @@
   }
   function drawListen(chs) {
     var st = Lst(), pool = LS.pool, stats = listenStats(pool);
-    var h = '<div class="page listen"><h1 class="chapter"><span class="num">🎧 A1 · ' + bn(pool.length) + 'টি বাক্য</span>শুনে বোঝো<span class="de">Hören üben</span></h1>';
+    var lvLbl = LISTEN_LEVEL_LABEL[st.lv] || st.lv.toUpperCase();
+    var h = '<div class="page listen"><h1 class="chapter"><span class="num">🎧 ' + esc(lvLbl) + ' · ' + bn(pool.length) + 'টি বাক্য</span>শুনে বোঝো<span class="de">Hören üben</span></h1>';
     h += '<p class="small">জার্মান বাক্য শুনুন (লেখা লুকানো)। বুঝতে পারলে ✓, না পারলে সেটা আবার বেশি আসবে।</p>';
     h += '<div class="pstats"><div><b>' + bn(stats.due) + '</b><small>আজ বাকি</small></div><div><b>' + bn(stats.ok) + '</b><small>বুঝেছি</small></div><div><b>' + bn(stats.hard) + '</b><small>কঠিন</small></div><div><b>' + bn(stats.fresh) + '</b><small>নতুন</small></div></div>';
 
-    // chapter filter (A1 only — level fixed via LISTEN_LEVELS)
-    h += '<div class="lfilters"><label>অধ্যায় <select id="lCh">';
-    h += '<option value="done"' + (st.ch === 'done' ? ' selected' : '') + '>শেষ করা অধ্যায় (ডিফল্ট)</option>';
-    h += '<option value="all"' + (st.ch === 'all' ? ' selected' : '') + '>A1-এর সব অধ্যায়</option>';
+    h += '<div class="lfilters">';
+    h += '<label>স্তর <select id="lLv">';
+    LISTEN_LEVELS.forEach(function (id) {
+      h += '<option value="' + id + '"' + (st.lv === id ? ' selected' : '') + '>' + esc(LISTEN_LEVEL_LABEL[id] || id) + '</option>';
+    });
+    h += '</select></label> ';
+    h += '<label>অধ্যায়/লেসন <select id="lCh">';
+    h += '<option value="done"' + (st.ch === 'done' ? ' selected' : '') + '>শেষ করাগুলো (ডিফল্ট)</option>';
+    h += '<option value="all"' + (st.ch === 'all' ? ' selected' : '') + '>এই স্তরের সব</option>';
     chs.forEach(function (x) {
       h += '<option value="' + x.c.id + '"' + (st.ch === x.c.id ? ' selected' : '') + '>' + esc(x.c.num) + ' — ' + esc(x.c.title) + ' (' + bn(x.n) + ')' + (x.done ? ' ✓' : '') + '</option>';
     });
     h += '</select></label></div>';
 
     if (!pool.length) {
-      h += '<div class="pempty"><p><b>এই বাছাইয়ে শোনার বাক্য নেই।</b></p><p>অধ্যায় বদলান, অথবা A1-এর ব্যাকরণ/সংলাপ অধ্যায় পড়ে "অধ্যায় শেষ ✓" দিন।</p><a class="continue" href="#/a1">A1 অধ্যায়ে যান →</a></div>';
+      h += '<div class="pempty"><p><b>এই বাছাইয়ে শোনার বাক্য নেই।</b></p><p>স্তর/অধ্যায় বদলান, অথবা লেসন পড়ে "অধ্যায় শেষ ✓" দিন।</p><a class="continue" href="#/' + st.lv + '">' + esc(lvLbl) + '-এ যান →</a></div>';
     } else if (LS.i >= LS.q.length) {
       h += '<div class="pempty"><p class="big">🎉</p><p><b>' + (LS.n ? 'এই সেশন শেষ! ' + bn(LS.n) + 'টি (বুঝেছি ' + bn(LS.ok) + ' · বুঝিনি ' + bn(LS.hard) + ')' : 'আজকের শোনা শেষ!') + '</b></p>' +
         '<button class="pbtn" id="lAgain" type="button">আবার শুরু করুন</button>' +
@@ -1006,6 +1032,9 @@
   }
   function wireListen(chs) {
     var st = Lst();
+    if ($('#lLv')) $('#lLv').onchange = function () {
+      st.lv = this.value; st.ch = 'done'; save(); LS = null; renderListen();
+    };
     if ($('#lCh')) $('#lCh').onchange = function () {
       st.ch = this.value; save();
       var pool = listenPool(chs); startListenSession(pool); LS.chs = chs; drawListen(chs);
